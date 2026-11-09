@@ -89,10 +89,17 @@
 - **Step 5: Printing Status:** Truthful Spooler progress stepper displaying live queue position (#1, #2 in line) and estimated wait times, clear distinctions between spooler reception and paper ejection, and an inline failure alert with duplicate-safe retry controls.
 - **Step 6: Digital Receipt:** Job reference, transaction reference, printable/downloadable proof (`window.print()`), and instant "Start New Job" CTA.
 - **User Dashboard (`/dashboard`):** Real-time print job table with status badges, KPI metrics, printable digital receipt viewer modal, and safe retry controls for interrupted print jobs.
+- **Admin Dashboard (`/admin`):**
+  - **Overview & Telemetry:** Gross, daily, weekly, and monthly revenue metrics, total pages printed, spooler queue depth, active print agent count, and system health status.
+  - **Printer Queue Management:** Hardware status inspection, maintenance mode toggle (`READY` / `MAINTENANCE`), and global default printer designation.
+  - **Kiosk Terminal Management:** Real-time campus kiosk terminal registry (`code`, `name`, `location`, bound printer, and QR URL).
+  - **Platform Settings Management:** Configurable upload caps (`MAX_UPLOAD_SIZE_MB`), page ceilings (`MAX_PAGE_COUNT`), retention duration (`DOCUMENT_RETENTION_DAYS`), and maintenance locks.
+  - **Live Pricing Rate Editor:** Real-time B&W and Color per-page price updates with database persistence.
+  - **Job Audit & Lifecycle Management:** Real-time multi-filter and search across all campus jobs with error inspection.
 
 ---
 
-## 3. Automated Test Verification (56 Total Tests)
+## 3. Automated Test Verification (62 Total Tests)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
@@ -102,9 +109,10 @@
 | Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
 | Payment Gateway & Webhooks | `backend/tests/test_payments.py` | 9 | **9 PASSED** | 1.49s |
 | Pricing Rules Engine | `backend/tests/test_pricing.py` | 4 | **4 PASSED** | 0.2s |
+| Admin Operations & Settings | `backend/tests/test_admin.py` | 6 | **6 PASSED** | 0.47s |
 | Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.39s |
 | Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.7s |
-| **Total** | | **56** | **56 PASSED (0 failures)** | |
+| **Total** | | **62** | **62 PASSED (0 failures)** | |
 
 ---
 

@@ -121,6 +121,23 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(payload),
   }),
+  getAdminSettings: () => request<any>('/admin/settings'),
+  updateAdminSettings: (settings: Record<string, string>) => request<any>('/admin/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ settings }),
+  }),
+  listAdminKiosks: () => request<any[]>('/admin/kiosks'),
+  createAdminKiosk: (payload: any) => request<any>('/admin/kiosks', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  togglePrinterStatus: (printerId: string, isOnline: boolean) => request<any>(`/admin/printers/${printerId}/toggle-status`, {
+    method: 'POST',
+    body: JSON.stringify({ is_online: isOnline }),
+  }),
+  setDefaultPrinter: (printerId: string) => request<any>(`/admin/printers/${printerId}/set-default`, {
+    method: 'POST',
+  }),
   listPrinters: () => request<any[]>('/printers'),
 };
 

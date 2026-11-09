@@ -33,7 +33,12 @@ import {
   Smartphone,
   ExternalLink,
   Download,
-  RotateCcw
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  X,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export const StudentPortal: React.FC = () => {
@@ -47,7 +52,24 @@ export const StudentPortal: React.FC = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [document, setDocument] = useState<DocumentInfo | null>(null);
+  const [previewPage, setPreviewPage] = useState<number>(1);
+  const [isZoomModalOpen, setIsZoomModalOpen] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper: check if a page number is within current configured page range
+  const isPageInRange = (page: number, rangeStr: string): boolean => {
+    if (!rangeStr || rangeStr === 'all' || !rangeStr.trim()) return true;
+    const parts = rangeStr.split(',').map((p) => p.trim());
+    for (const part of parts) {
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(Number);
+        if (!isNaN(start) && !isNaN(end) && page >= start && page <= end) return true;
+      } else {
+        if (Number(part) === page) return true;
+      }
+    }
+    return false;
+  };
 
   // Step 2: Configuration state
   const [config, setConfig] = useState<PrintConfig>({
@@ -132,12 +154,15 @@ export const StudentPortal: React.FC = () => {
     return () => clearInterval(interval);
   }, [job, activeStep]);
 
-  // Handle PDF file selection
+  // Handle document/image file selection
   const handleFileUpload = async (file: File) => {
     setUploadError(null);
 
-    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-      setUploadError('Only PDF documents are supported for printing.');
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+    const isImage = /\.(png|jpe?g|webp)$/i.test(file.name) || file.type.startsWith('image/');
+
+    if (!isPdf && !isImage) {
+      setUploadError('Only PDF documents or images (PNG, JPG, WEBP) are supported for printing.');
       return;
     }
 
@@ -150,9 +175,10 @@ export const StudentPortal: React.FC = () => {
     try {
       const res = await api.uploadDocument(file);
       setDocument(res.document);
+      setPreviewPage(1);
       setActiveStep(2);
     } catch (err: any) {
-      setUploadError(err.message || 'Failed to process and validate PDF.');
+      setUploadError(err.message || 'Failed to process and validate document.');
     } finally {
       setIsUploading(false);
     }
@@ -320,9 +346,9 @@ export const StudentPortal: React.FC = () => {
         {activeStep === 1 && (
           <div>
             <div className="text-center max-w-xl mx-auto mb-8">
-              <h3 className="text-2xl font-bold text-slate-900">Upload Your PDF Document</h3>
+              <h3 className="text-2xl font-bold text-slate-900">Upload Your Document or Image</h3>
               <p className="text-sm text-slate-500 mt-1">
-                Upload your assignment, thesis, or notes. Our engine inspects page counts and format instantly.
+                Upload your assignment, thesis, ID card, or notes. PDF and images (PNG, JPG, WEBP) are automatically formatted to A4 single-sided print.
               </p>
             </div>
 
@@ -350,7 +376,7 @@ export const StudentPortal: React.FC = () => {
                 <input
                   type="file"
                   ref={fileInputRef}
-                  accept=".pdf,application/pdf"
+                  accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg,image/webp"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {
@@ -364,15 +390,22 @@ export const StudentPortal: React.FC = () => {
                 </div>
 
                 <h4 className="text-base font-bold text-slate-900">
-                  {isUploading ? 'Validating and Processing PDF...' : 'Click to upload or drag & drop PDF'}
+                  {isUploading ? 'Validating and Formatting Document...' : 'Click to upload or drag & drop file'}
                 </h4>
                 <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                  PDF format only. Maximum file size: 50MB. Password-protected files will be rejected.
+                  PDF, PNG, JPG, or WEBP. Max 50MB. Images are automatically centered and fitted to standard A4 single-sided print.
                 </p>
 
-                <div className="mt-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">
-                  <FileText className="w-4 h-4 text-brand-500" />
-                  Auto-detects page count & color spaces
+                <div className="mt-6 flex flex-wrap justify-center items-center gap-2 text-xs">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                    PDF Document
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200">
+                    PNG / JPG Image
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                    Auto-Fit A4
+                  </span>
                 </div>
               </div>
             ) : (
@@ -383,7 +416,14 @@ export const StudentPortal: React.FC = () => {
                       <FileCheck2 className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-900 text-base">{document.original_filename}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-900 text-base">{document.original_filename}</h4>
+                        {/\.(png|jpe?g|webp)$/i.test(document.original_filename) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-semibold">
+                            <ImageIcon className="w-3 h-3" /> Converted to A4
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
                         <span className="font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded">
                           {document.page_count} {document.page_count === 1 ? 'Page' : 'Pages'}
@@ -412,17 +452,124 @@ export const StudentPortal: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Multi-Page Document Preview Carousel */}
                 <div className="mt-6 pt-6 border-t border-slate-200">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5 mb-3">
-                    <Eye className="w-3.5 h-3.5 text-brand-600" /> First Page Preview
-                  </span>
-                  <div className="flex justify-center p-4 bg-white rounded-xl border border-slate-200">
-                    <img 
-                      src={api.getDocumentPreviewUrl(document.id, 1)} 
-                      alt="PDF Page 1 Preview"
-                      className="max-h-72 object-contain rounded shadow-sm border border-slate-100" 
-                    />
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-brand-600" /> Document Preview
+                      </span>
+                      {document.page_count > 1 && (
+                        <span className="text-xs text-slate-500 font-medium">
+                          — Page {previewPage} of {document.page_count}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {document.page_count > 1 && (
+                        <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                            disabled={previewPage <= 1}
+                            className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                            title="Previous Page"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="px-1 text-[11px] font-mono">
+                            {previewPage} / {document.page_count}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPage((p) => Math.min(document.page_count, p + 1))}
+                            disabled={previewPage >= document.page_count}
+                            className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                            title="Next Page"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setIsZoomModalOpen(true)}
+                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-white text-slate-600 transition-colors"
+                        title="Zoom Preview"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Main Page Preview Image */}
+                  <div className="relative group flex justify-center p-4 bg-white rounded-xl border border-slate-200 overflow-hidden min-h-[280px] items-center">
+                    <img 
+                      src={api.getDocumentPreviewUrl(document.id, previewPage)} 
+                      alt={`Page ${previewPage} Preview`}
+                      className="max-h-80 object-contain rounded shadow-sm border border-slate-100 transition-transform group-hover:scale-[1.01]" 
+                    />
+                    
+                    {/* Floating Page navigation buttons */}
+                    {document.page_count > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                          disabled={previewPage <= 1}
+                          className="absolute left-3 p-2 rounded-full bg-slate-900/60 hover:bg-slate-900 text-white backdrop-blur-sm disabled:opacity-0 transition-opacity"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewPage((p) => Math.min(document.page_count, p + 1))}
+                          disabled={previewPage >= document.page_count}
+                          className="absolute right-3 p-2 rounded-full bg-slate-900/60 hover:bg-slate-900 text-white backdrop-blur-sm disabled:opacity-0 transition-opacity"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Thumbnail Strip (if > 1 page) */}
+                  {document.page_count > 1 && (
+                    <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-2">
+                      {Array.from({ length: document.page_count }, (_, i) => i + 1).map((pNum) => {
+                        const isSelected = pNum === previewPage;
+                        const inRange = isPageInRange(pNum, config.page_range);
+                        return (
+                          <button
+                            key={pNum}
+                            type="button"
+                            onClick={() => setPreviewPage(pNum)}
+                            className={`relative shrink-0 w-16 h-22 rounded-lg border p-1 transition-all text-center flex flex-col justify-between items-center ${
+                              isSelected
+                                ? 'border-brand-600 ring-2 ring-brand-500/30 bg-brand-50/50'
+                                : 'border-slate-200 hover:border-slate-300 bg-white'
+                            }`}
+                          >
+                            <img
+                              src={api.getDocumentPreviewUrl(document.id, pNum)}
+                              alt={`Thumbnail p.${pNum}`}
+                              className="w-full h-14 object-cover rounded"
+                            />
+                            <div className="w-full flex items-center justify-between px-0.5 text-[10px] font-semibold">
+                              <span className={isSelected ? 'text-brand-700' : 'text-slate-500'}>p.{pNum}</span>
+                              {inRange ? (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Included in print" />
+                              ) : (
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300" title="Excluded from print" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -625,6 +772,66 @@ export const StudentPortal: React.FC = () => {
                     >
                       Back to Upload
                     </button>
+                  </div>
+
+                  {/* Compact Live Page Preview in Step 2 */}
+                  <div className="mt-6 pt-5 border-t border-slate-200">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
+                      <span className="flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-brand-600" />
+                        Page {previewPage} of {document.page_count}
+                      </span>
+                      {document.page_count > 1 && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                            disabled={previewPage <= 1}
+                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                            title="Previous Page"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPage((p) => Math.min(document.page_count, p + 1))}
+                            disabled={previewPage >= document.page_count}
+                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                            title="Next Page"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div 
+                      onClick={() => setIsZoomModalOpen(true)}
+                      className="flex justify-center p-2 bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:border-brand-400 transition-colors group relative"
+                      title="Click to Zoom"
+                    >
+                      <img
+                        src={api.getDocumentPreviewUrl(document.id, previewPage)}
+                        alt={`Page ${previewPage} Preview`}
+                        className="max-h-48 object-contain rounded"
+                      />
+                      <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="p-1.5 rounded-lg bg-white/90 text-slate-800 shadow text-xs font-medium flex items-center gap-1">
+                          <Maximize2 className="w-3 h-3" /> Zoom
+                        </span>
+                      </div>
+                    </div>
+                    {/* Range Inclusion Feedback */}
+                    <div className="mt-2 text-center text-[11px]">
+                      {isPageInRange(previewPage, config.page_range) ? (
+                        <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          ✓ Page {previewPage} included in this print
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          ✕ Page {previewPage} skipped by page range
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -991,6 +1198,85 @@ export const StudentPortal: React.FC = () => {
         )}
 
       </div>
+
+      {/* High-Resolution Zoom Preview Modal */}
+      {isZoomModalOpen && document && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsZoomModalOpen(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-white text-sm">{document.original_filename}</span>
+                <span className="text-xs text-slate-400 font-mono">
+                  Page {previewPage} of {document.page_count}
+                </span>
+                {isPageInRange(previewPage, config.page_range) ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-semibold">
+                    Included in Order
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-semibold">
+                    Excluded by Page Range
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsZoomModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Large Preview */}
+            <div className="flex-1 overflow-auto p-4 flex items-center justify-center relative min-h-[400px]">
+              <img
+                src={api.getDocumentPreviewUrl(document.id, previewPage)}
+                alt={`Page ${previewPage} Full View`}
+                className="max-h-[68vh] object-contain rounded-lg shadow-2xl border border-slate-800 bg-white"
+              />
+
+              {document.page_count > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                    disabled={previewPage <= 1}
+                    className="absolute left-6 p-3 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white backdrop-blur-md disabled:opacity-0 transition-opacity"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPage((p) => Math.min(document.page_count, p + 1))}
+                    disabled={previewPage >= document.page_count}
+                    className="absolute right-6 p-3 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white backdrop-blur-md disabled:opacity-0 transition-opacity"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span>Press Esc or click outside to dismiss</span>
+              {document.page_count > 1 && (
+                <div className="flex items-center gap-1 font-mono">
+                  <span>Use arrow buttons to flip pages</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -62,16 +62,23 @@ PrintX is an open-source, production-grade smart self-service document printing 
 - **Dynamic Kiosk QR Code Streaming:** `GET /api/v1/kiosks/{id}/qr.png` generating high-contrast PNG QR codes on-the-fly for any campus terminal.
 - **Kiosk Standby / Attract Mode Screen:** Dedicated route `/kiosk/:code` via [`frontend/src/pages/KioskDisplay.tsx`](file:///C:/Users/sampa/Desktop/PrintX/frontend/src/pages/KioskDisplay.tsx) featuring full-screen kiosk layout, animated QR code scanner target, live HP Smart Tank 585 hardware telemetry, real-time clock, pricing badges, and 3-step illustrated walkthrough.
 - **Printable A4 Signage Poster Generator:** [`scripts/generate-kiosk-poster.py`](file:///C:/Users/sampa/Desktop/PrintX/scripts/generate-kiosk-poster.py) generating high-res A4 PDF posters (`kiosk_poster_KIOSK-01.pdf`) ready to print on the HP Smart Tank 585 and display at physical kiosks.
-- **Complete Environment Verifier:** [`scripts/system-diagnostic.ps1`](file:///C:/Users/sampa/Desktop/PrintX/scripts/system-diagnostic.ps1) reporting 11/11 Passed checks across OS, Python, pywin32, spooler service, HP printer discovery, SumatraPDF, SQLite WAL mode, and Node.js.
+- **Complete Environment Verifier:** [`scripts/system-diagnostic.ps1`](file:///C:/Users/sampa/Desktop/PrintX/scripts/system-diagnostic.ps1) reporting 12/12 Passed checks across OS, Python, pywin32, spooler service, HP printer discovery, SumatraPDF, SQLite WAL mode, and Node.js.
+
+### H. Multi-Format Image Upload & Multi-Page Preview Carousel (Completed)
+- **Transparent Image-to-A4 PDF Conversion:** [`backend/app/services/document_service.py`](file:///C:/Users/sampa/Desktop/PrintX/backend/app/services/document_service.py) automatically converts uploaded PNG, JPG, JPEG, and WEBP images into centered, aspect-ratio-scaled A4 PDFs with 0.5-inch margins for direct HP Smart Tank 585 printing.
+- **Multi-Page Preview Carousel:** Step 1 in [`frontend/src/pages/StudentPortal.tsx`](file:///C:/Users/sampa/Desktop/PrintX/frontend/src/pages/StudentPortal.tsx) features page flip navigation, a responsive horizontal thumbnail strip, and an image auto-formatting badge.
+- **Interactive Step 2 Live Preview:** Shows the active page being configured with real-time visual feedback on whether each page is included or skipped by the user's custom page range.
+- **High-Resolution Zoom Modal:** Click-to-zoom modal with keyboard-friendly page flipping and fullscreen preview.
+- **Thumbnail HTTP Caching:** Added `Cache-Control: public, max-age=3600` headers on `/preview` for instant page carousel switching.
 
 ---
 
-## 3. Automated Test Verification (68 Total Tests Passing)
+## 3. Automated Test Verification (71 Total Tests Passing)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
 | Backend Core & Auth | `backend/tests/test_auth.py` | 6 | **6 PASSED** | 0.4s |
-| Document Engine | `backend/tests/test_documents.py` | 8 | **8 PASSED** | 0.3s |
+| Document Engine & Multi-Format | `backend/tests/test_documents.py` | 11 | **11 PASSED** | 0.8s |
 | Storage Abstraction & Download | `backend/tests/test_storage.py` | 4 | **4 PASSED** | 0.2s |
 | Health & Readiness | `backend/tests/test_health.py` | 3 | **3 PASSED** | 0.1s |
 | Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
@@ -81,7 +88,7 @@ PrintX is an open-source, production-grade smart self-service document printing 
 | End-to-End Acceptance Suite | `backend/tests/test_e2e_acceptance.py` | 1 | **1 PASSED** | 0.46s |
 | Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.28s |
 | Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.11s |
-| **Total Automated Suite** | | **68** | **68 PASSED (0 failures)** | |
+| **Total Automated Suite** | | **71** | **71 PASSED (0 failures)** | |
 
 ---
 

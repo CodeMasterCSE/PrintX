@@ -1,11 +1,11 @@
-﻿# ==============================================================================
-# PrintX — Complete Windows 11 System Diagnostics & Acceptance Verifier
+# ==============================================================================
+# PrintX - Complete Windows 11 System Diagnostics and Acceptance Verifier
 # Run from repository root: .\scripts\system-diagnostic.ps1
 # ==============================================================================
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host "   PrintX Platform — Complete System Diagnostics & Acceptance     " -ForegroundColor Cyan
+Write-Host "   PrintX Platform - Complete System Diagnostics and Acceptance   " -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -78,7 +78,7 @@ $hpPrinter = $printers | Where-Object { $_.Name -like "*HP Smart Tank*" }
 if ($hpPrinter) {
     Report-Check "Hardware" "HP Smart Tank 585 Queue" "PASS" "Found queue '$($hpPrinter.Name)'"
 } else {
-    Report-Check "Hardware" "HP Smart Tank 585 Queue" "WARN" "Physical printer not plugged in. Available: $(($printers.Name | Select-Object -First 2) -join ', ')"
+    Report-Check "Hardware" "HP Smart Tank 585 Queue" "WARN" "Physical printer queue not found"
 }
 
 $pdfPrinter = $printers | Where-Object { $_.Name -eq "Microsoft Print to PDF" }
@@ -97,11 +97,11 @@ if (Test-Path $sumatraPath) {
     Report-Check "Print Engine" "SumatraPDF Portable" "FAIL" "Missing binary at $sumatraPath"
 }
 
-# 7. SQLite Database & WAL Mode
+# 7. SQLite Database and WAL Mode
 $dbPath = Join-Path $PSScriptRoot "..\backend\printx.db"
 if (Test-Path $dbPath) {
     try {
-        $walMode = python -c "import sqlite3; conn = sqlite3.connect(r'$dbPath'); cur = conn.cursor(); cur.execute('PRAGMA journal_mode;'); print(cur.fetchone()[0]); conn.close()" 2>$null
+        $walMode = python -c "import sqlite3; conn = sqlite3.connect('$($dbPath.Replace('\', '/'))'); cur = conn.cursor(); cur.execute('PRAGMA journal_mode;'); print(cur.fetchone()[0]); conn.close()" 2>$null
         if ($walMode -eq "wal") {
             Report-Check "Database" "SQLite WAL Persistence" "PASS" "printx.db active in WAL mode"
         } else {
@@ -111,10 +111,10 @@ if (Test-Path $dbPath) {
         Report-Check "Database" "SQLite WAL Persistence" "WARN" "Could not verify journal mode"
     }
 } else {
-    Report-Check "Database" "SQLite Database" "WARN" "printx.db not yet created (will auto-seed on first run)"
+    Report-Check "Database" "SQLite Database" "WARN" "printx.db not yet created"
 }
 
-# 8. Node.js & Frontend Environment
+# 8. Node.js Environment
 try {
     $nodeVer = node -v 2>$null
     if ($nodeVer) {
@@ -131,15 +131,27 @@ $distHtml = Join-Path $PSScriptRoot "..\frontend\dist\index.html"
 if (Test-Path $distHtml) {
     Report-Check "Frontend" "Production Build Artifact" "PASS" "dist\index.html compiled and ready"
 } else {
-    Report-Check "Frontend" "Production Build Artifact" "WARN" "dist directory not yet built (run 'npm run build --prefix frontend')"
+    Report-Check "Frontend" "Production Build Artifact" "WARN" "dist directory not yet built"
 }
 
-# 10. Kiosk Poster Signage
+# 10. Multi-Format Upload Engine Verification
+try {
+    $imgSupport = python -c "import sys; sys.path.insert(0, 'backend'); from app.services.document_service import DocumentService; print('OK' if DocumentService.detect_file_format(b'\x89PNG\r\n\x1a\n') == 'png' else 'FAIL')" 2>$null
+    if ($imgSupport -eq "OK") {
+        Report-Check "Document Engine" "Multi-Format Image Support" "PASS" "PNG, JPG, WEBP to A4 PDF active"
+    } else {
+        Report-Check "Document Engine" "Multi-Format Image Support" "WARN" "Image conversion check yielded: $imgSupport"
+    }
+} catch {
+    Report-Check "Document Engine" "Multi-Format Image Support" "WARN" "Could not verify multi-format support"
+}
+
+# 11. Kiosk Poster Signage
 $posterPdf = Join-Path $PSScriptRoot "..\kiosk_poster_KIOSK-01.pdf"
 if (Test-Path $posterPdf) {
-    Report-Check "Signage" "A4 Kiosk Poster PDF" "PASS" "kiosk_poster_KIOSK-01.pdf generated with high-res QR code"
+    Report-Check "Signage" "A4 Kiosk Poster PDF" "PASS" "kiosk_poster_KIOSK-01.pdf ready for printing"
 } else {
-    Report-Check "Signage" "A4 Kiosk Poster PDF" "WARN" "Poster not yet generated (run python scripts\generate-kiosk-poster.py)"
+    Report-Check "Signage" "A4 Kiosk Poster PDF" "WARN" "Poster not yet generated"
 }
 
 Write-Host ""

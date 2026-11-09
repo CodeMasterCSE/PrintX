@@ -72,7 +72,11 @@ def get_document_preview(document_id: str, page: int = 1, db: Session = Depends(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
     image_bytes = DocumentService.generate_preview(doc, page_number=page)
-    return Response(content=image_bytes, media_type="image/png")
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
 
 
 @router.get("/{document_id}/download")

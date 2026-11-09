@@ -136,3 +136,70 @@ def test_delete_document(client, db_session):
     get_res = client.get(f"/api/v1/documents/{doc_id}")
     assert get_res.status_code == 404
 
+
+def test_upload_png_image_auto_converts_to_a4_pdf(client):
+    from PIL import Image
+    # Create valid in-memory PNG
+    img = Image.new("RGB", (640, 480), color=(50, 100, 150))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    files = {"file": ("student_id.png", png_bytes, "image/png")}
+    res = client.post("/api/v1/documents/upload", files=files)
+    assert res.status_code == 201
+    data = res.json()["document"]
+    assert data["original_filename"] == "student_id.png"
+    assert data["page_count"] == 1
+    assert data["mime_type"] == "application/pdf"
+
+    # Verify preview works
+    prev_res = client.get(f"/api/v1/documents/{data['id']}/preview?page=1")
+    assert prev_res.status_code == 200
+    assert prev_res.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_upload_jpeg_image_auto_converts_to_a4_pdf(client):
+    from PIL import Image
+    # Create valid in-memory JPEG
+    img = Image.new("RGB", (800, 600), color=(200, 80, 80))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpg_bytes = buf.getvalue()
+
+    files = {"file": ("assignment_scan.jpg", jpg_bytes, "image/jpeg")}
+    res = client.post("/api/v1/documents/upload", files=files)
+    assert res.status_code == 201
+    data = res.json()["document"]
+    assert data["original_filename"] == "assignment_scan.jpg"
+    assert data["page_count"] == 1
+    assert data["mime_type"] == "application/pdf"
+
+
+def test_multi_page_preview_navigation(client):
+    pdf_bytes = create_sample_pdf(num_pages=3, title="Multi-Page Booklet")
+    files = {"file": ("booklet.pdf", pdf_bytes, "application/pdf")}
+    upload_res = client.post("/api/v1/documents/upload", files=files)
+    doc_id = upload_res.json()["document"]["id"]
+
+    # Page 1 preview
+    p1_res = client.get(f"/api/v1/documents/{doc_id}/preview?page=1")
+    assert p1_res.status_code == 200
+    assert p1_res.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    # Page 2 preview
+    p2_res = client.get(f"/api/v1/documents/{doc_id}/preview?page=2")
+    assert p2_res.status_code == 200
+    assert p2_res.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    # Page 3 preview
+    p3_res = client.get(f"/api/v1/documents/{doc_id}/preview?page=3")
+    assert p3_res.status_code == 200
+    assert p3_res.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    # Out of bounds page requests fallback to page 1 safely
+    oob_res = client.get(f"/api/v1/documents/{doc_id}/preview?page=99")
+    assert oob_res.status_code == 200
+    assert oob_res.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+

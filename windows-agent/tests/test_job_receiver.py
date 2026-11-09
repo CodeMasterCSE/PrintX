@@ -37,3 +37,4 @@ def test_job_receiver_download_remote_cloud_document(tmp_path):
         downloaded_path = receiver._download_document("job-cloud-01", "https://s3.amazonaws.com/printx/test.pdf")
         assert downloaded_path is not None
         assert "job-cloud-01.pdf" in downloaded_path
+

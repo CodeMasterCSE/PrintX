@@ -10,7 +10,9 @@ from app.schemas.job import (
     JobCreateRequest,
     JobResponse,
     JobStatusUpdate,
-    JobEventResponse
+    JobEventResponse,
+    JobRetryRequest,
+    ReconciliationResult
 )
 from app.schemas.common import MessageResponse
 from app.services.job_service import JobService, JobTransitionError
@@ -59,56 +61,94 @@ def create_print_job(
 ):
     """Creates a persistent print job and calculates server-side price."""
     job = JobService.create_job(db=db, req=req, user=user)
-    return JobResponse.model_validate(job)
+    return JobService.populate_job_response(db, job)
 
 
 @router.get("", response_model=List[JobResponse])
 def list_jobs(
     status_filter: Optional[str] = None,
-    limit: int = 20,
+    search: Optional[str] = None,
+    printer_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_current_user)
 ):
-    """Lists print jobs with optional status filter."""
+    """Lists print jobs with optional status filter, search by job number/idempotency key, and printer filtering."""
     query = db.query(PrintJob)
     if user:
         query = query.filter(PrintJob.user_id == user.id)
     if status_filter:
         query = query.filter(PrintJob.status == status_filter.upper())
+    if printer_id:
+        query = query.filter(PrintJob.printer_id == printer_id)
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            (PrintJob.job_number.ilike(pattern)) |
+            (PrintJob.idempotency_key.ilike(pattern))
+        )
     
-    jobs = query.order_by(PrintJob.created_at.desc()).limit(limit).all()
-    return [JobResponse.model_validate(j) for j in jobs]
+    jobs = query.order_by(PrintJob.created_at.desc()).offset(offset).limit(limit).all()
+    return [JobService.populate_job_response(db, j) for j in jobs]
+
+
+@router.post("/reconcile", response_model=ReconciliationResult)
+def reconcile_stale_jobs(
+    dispatched_timeout_seconds: int = 300,
+    printing_timeout_seconds: int = 900,
+    pending_timeout_seconds: int = 900,
+    db: Session = Depends(get_db)
+):
+    """Triggers crash recovery reconciliation sweep across stuck or timed-out print jobs."""
+    results = JobService.reconcile_stale_jobs(
+        db=db,
+        dispatched_timeout_seconds=dispatched_timeout_seconds,
+        printing_timeout_seconds=printing_timeout_seconds,
+        pending_timeout_seconds=pending_timeout_seconds
+    )
+    return ReconciliationResult(**results)
 
 
 @router.get("/{job_id}", response_model=JobResponse)
 def get_job(job_id: str, db: Session = Depends(get_db)):
-    """Retrieves full job details, document info, configuration, and audit timeline."""
+    """Retrieves full job details, document info, configuration, audit timeline, and live queue position."""
     job = db.query(PrintJob).filter(PrintJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
-    return JobResponse.model_validate(job)
+    return JobService.populate_job_response(db, job)
 
 
 @router.post("/{job_id}/cancel", response_model=JobResponse)
-def cancel_job(job_id: str, db: Session = Depends(get_db)):
+def cancel_job(
+    job_id: str,
+    reason: Optional[str] = "User requested cancellation",
+    db: Session = Depends(get_db)
+):
     """Cancels a pending or queued job prior to physical printing."""
     job = db.query(PrintJob).filter(PrintJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
     
-    cancelled = JobService.cancel_job(db=db, job=job)
-    return JobResponse.model_validate(cancelled)
+    cancelled = JobService.cancel_job(db=db, job=job, reason=reason)
+    return JobService.populate_job_response(db, cancelled)
 
 
 @router.post("/{job_id}/retry", response_model=JobResponse)
-def retry_job(job_id: str, db: Session = Depends(get_db)):
-    """Safely retries a failed print job."""
+def retry_job(
+    job_id: str,
+    req: Optional[JobRetryRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """Safely retries a failed print job with duplicate print protection."""
     job = db.query(PrintJob).filter(PrintJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
     
-    retried = JobService.retry_failed_job(db=db, job=job)
-    return JobResponse.model_validate(retried)
+    force = req.force_retry if req else False
+    notes = req.operator_notes if req else None
+    retried = JobService.retry_failed_job(db=db, job=job, force_retry=force, operator_notes=notes)
+    return JobService.populate_job_response(db, retried)
 
 
 # ================= Windows Agent Endpoints =================

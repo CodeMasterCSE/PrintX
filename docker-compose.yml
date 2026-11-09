@@ -50,3 +50,4 @@ volumes:
     driver: local
   backend_uploads:
     driver: local
+

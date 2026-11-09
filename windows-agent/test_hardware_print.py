@@ -149,3 +149,4 @@ if __name__ == "__main__":
     use_pdf = "--virtual" in sys.argv
     color = "grayscale" if "--grayscale" in sys.argv else "color"
     run_hardware_test(use_virtual=use_pdf, color_mode=color)
+

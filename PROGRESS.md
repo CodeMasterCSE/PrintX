@@ -43,12 +43,24 @@
   - Agent heartbeat and outbound pull worker.
 
 ### C. Job Engine & State Machine (`backend/app/services/job_service.py`)
-- Enforces strict deterministic state transitions:
-  `CREATED` -> `DOCUMENT_VALIDATED` -> `PAYMENT_PENDING` -> `PAYMENT_VERIFIED` -> `QUEUED` -> `DISPATCHED` -> `SUBMITTED_TO_SPOOLER` -> `PRINTING` -> `COMPLETED`.
-- Human-readable sequential job numbers (`PX-2026-0001`).
-- Server-side price calculation with custom page-range parsing (`all`, `1-3,5`).
-- Job cancellation rules (ineligible once submitted to physical spooler).
-- Safe retry mechanisms and immutable `JobEvent` audit log records.
+- **Deterministic 12-State Machine:**
+  Enforces transitions across: `CREATED` -> `DOCUMENT_VALIDATED` -> `PAYMENT_PENDING` -> `PAYMENT_VERIFIED` -> `QUEUED` -> `DISPATCHED` -> `SUBMITTED_TO_SPOOLER` -> `PRINTING` -> `COMPLETED`, plus terminal/exceptional states `FAILED`, `CANCELLED`, `EXPIRED`.
+- **Sequential Job Numbering:** User-friendly references (`PX-2026-0001`).
+- **Server-Side Authoritative Pricing:** Page count parsing (`all`, `1-3,5`), copy multiplier, minimum order fees, zero client trust.
+- **Physical Duplicate Print Safeguards:**
+  - Pre-spooler failures (e.g. agent offline) allow safe, transparent re-queueing.
+  - Post-spooler failures (e.g. paper out or jam while in spooler) strictly **block blind retries**; requires explicit `force_retry=True` with operator confirmation to prevent double paper output on HP Smart Tank 585.
+  - Updates idempotency key on operator override to permit re-printing through agent guard.
+- **Queue Position & Estimated Wait Telemetry:**
+  - Dynamic queue position calculation (#1, #2 in queue).
+  - Accurate wait time estimation based on preceding print queue sheets (8s/sheet throughput on HP Smart Tank 585).
+- **Crash Recovery & Reconciliation Engine:**
+  - Auto-recovers orphaned `DISPATCHED` jobs after agent timeout.
+  - Flags stalled spooling jobs requiring physical hardware checks.
+  - Automatically sweeps and expires abandoned `PAYMENT_PENDING` checkout sessions (>15 min).
+  - Executed on backend startup and accessible via `POST /api/v1/jobs/reconcile`.
+- **Audit History & Timeline:**
+  - Immutable `JobEvent` records tracking transition history, triggers, and error messages.
 
 ### D. Payment Abstraction (`backend/app/services/payment_service.py`)
 - Provider-independent payment gateway interface (`BasePaymentGateway`).
@@ -70,19 +82,19 @@
 
 ---
 
-## 3. Automated Test Verification (41 Total Tests)
+## 3. Automated Test Verification (48 Total Tests)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
 | Backend Core & Auth | `backend/tests/test_auth.py` | 6 | **6 PASSED** | 0.4s |
 | Document Engine | `backend/tests/test_documents.py` | 8 | **8 PASSED** | 0.3s |
 | Health & Readiness | `backend/tests/test_health.py` | 3 | **3 PASSED** | 0.1s |
-| Job State Machine | `backend/tests/test_jobs.py` | 5 | **5 PASSED** | 0.3s |
+| Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
 | Payment Gateway | `backend/tests/test_payments.py` | 4 | **4 PASSED** | 0.3s |
 | Pricing Rules Engine | `backend/tests/test_pricing.py` | 4 | **4 PASSED** | 0.2s |
-| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.48s |
-| Frontend Configuration | `frontend/src/tests/` | 3 | **3 PASSED** | 2.5s |
-| **Total** | | **41** | **41 PASSED (0 failures)** | |
+| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.50s |
+| Frontend Configuration | `frontend/src/tests/` | 3 | **3 PASSED** | 2.6s |
+| **Total** | | **48** | **48 PASSED (0 failures)** | |
 
 ---
 

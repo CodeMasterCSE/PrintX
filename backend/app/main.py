@@ -22,6 +22,10 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             init_db(db)
+            from app.services.job_service import JobService
+            reconcile_result = JobService.reconcile_stale_jobs(db)
+            if reconcile_result["total_processed"] > 0:
+                logger.info(f"Startup crash recovery executed: {reconcile_result}")
         finally:
             db.close()
 

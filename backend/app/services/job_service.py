@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,7 +10,7 @@ from app.models.printer import Printer
 from app.models.kiosk import Kiosk
 from app.models.pricing import PricingRule
 from app.models.user import User
-from app.schemas.job import JobCreateRequest, PrintConfigurationCreate
+from app.schemas.job import JobCreateRequest, PrintConfigurationCreate, JobResponse
 from app.core.logging import logger
 from app.api.routes.pricing import parse_page_range
 
@@ -26,9 +26,9 @@ VALID_TRANSITIONS = {
     JobStatus.CREATED: {JobStatus.DOCUMENT_VALIDATED, JobStatus.CANCELLED},
     JobStatus.DOCUMENT_VALIDATED: {JobStatus.PAYMENT_PENDING, JobStatus.CANCELLED},
     JobStatus.PAYMENT_PENDING: {JobStatus.PAYMENT_VERIFIED, JobStatus.EXPIRED, JobStatus.CANCELLED},
-    JobStatus.PAYMENT_VERIFIED: {JobStatus.QUEUED, JobStatus.CANCELLED},
+    JobStatus.PAYMENT_VERIFIED: {JobStatus.QUEUED, JobStatus.DISPATCHED, JobStatus.CANCELLED},
     JobStatus.QUEUED: {JobStatus.DISPATCHED, JobStatus.CANCELLED},
-    JobStatus.DISPATCHED: {JobStatus.SUBMITTED_TO_SPOOLER, JobStatus.FAILED},
+    JobStatus.DISPATCHED: {JobStatus.SUBMITTED_TO_SPOOLER, JobStatus.FAILED, JobStatus.CANCELLED},
     JobStatus.SUBMITTED_TO_SPOOLER: {JobStatus.PRINTING, JobStatus.COMPLETED, JobStatus.FAILED},
     JobStatus.PRINTING: {JobStatus.COMPLETED, JobStatus.FAILED},
     JobStatus.FAILED: {JobStatus.QUEUED},  # Safe retry
@@ -172,6 +172,36 @@ class JobService:
         return job
 
     @classmethod
+    def get_queue_info(cls, db: Session, job: PrintJob) -> tuple[Optional[int], Optional[int]]:
+        """Calculates queue position and estimated wait time in seconds."""
+        if job.status != JobStatus.QUEUED:
+            return None, None
+
+        earlier_jobs = db.query(PrintJob).filter(
+            PrintJob.status == JobStatus.QUEUED,
+            PrintJob.created_at < job.created_at
+        )
+        if job.printer_id:
+            earlier_jobs = earlier_jobs.filter(PrintJob.printer_id == job.printer_id)
+
+        earlier_list = earlier_jobs.all()
+        position = len(earlier_list) + 1
+        # HP Smart Tank 585 print throughput estimate: ~8s per sheet + 5s startup
+        total_sheets = sum(j.sheets_used or 1 for j in earlier_list)
+        est_seconds = (total_sheets * 8) + 5
+        return position, est_seconds
+
+    @classmethod
+    def populate_job_response(cls, db: Session, job: PrintJob) -> JobResponse:
+        """Enriches JobResponse model with real-time queue position and wait telemetry."""
+        data = JobResponse.model_validate(job)
+        if job.status == JobStatus.QUEUED:
+            pos, est_wait = cls.get_queue_info(db, job)
+            data.queue_position = pos
+            data.estimated_wait_seconds = est_wait
+        return data
+
+    @classmethod
     def pull_next_queued_job(cls, db: Session, printer_id: Optional[str] = None) -> Optional[PrintJob]:
         """Returns next job that is PAYMENT_VERIFIED or QUEUED."""
         query = db.query(PrintJob).filter(
@@ -194,12 +224,133 @@ class JobService:
         return cls.transition_status(db, job, JobStatus.CANCELLED, message=reason)
 
     @classmethod
-    def retry_failed_job(cls, db: Session, job: PrintJob) -> PrintJob:
-        """Safely retries a failed job without double charging."""
+    def retry_failed_job(
+        cls,
+        db: Session,
+        job: PrintJob,
+        force_retry: bool = False,
+        operator_notes: Optional[str] = None
+    ) -> PrintJob:
+        """
+        Safely retries a failed job with physical duplicate print safeguards.
+        If the job was previously submitted to the spooler, requires explicit operator force_retry.
+        """
         if job.status != JobStatus.FAILED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only failed print jobs are eligible for retry."
             )
-        return cls.transition_status(db, job, JobStatus.QUEUED, message="Job re-enqueued for agent retry.")
+
+        # Inspect audit events: did this job ever reach the Windows Spooler?
+        was_submitted_to_spooler = any(
+            event.new_status in (JobStatus.SUBMITTED_TO_SPOOLER.value, JobStatus.PRINTING.value)
+            for event in job.events
+        )
+
+        if was_submitted_to_spooler and not force_retry:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "DUPLICATE PRINT SAFEGUARD: This job was previously submitted to the Windows Spooler. "
+                    "Retrying blindly could produce duplicate physical prints on the HP Smart Tank 585. "
+                    "Verify the printer output tray and supply force_retry=true with operator confirmation."
+                )
+            )
+
+        if was_submitted_to_spooler and force_retry:
+            # Generate a new unique idempotency key so the Windows Agent guard allows it
+            retry_tag = int(datetime.now(timezone.utc).timestamp())
+            job.idempotency_key = f"{job.idempotency_key}-retry-{retry_tag}"
+            note_msg = f"Operator forced retry after tray check. Notes: {operator_notes or 'None'}"
+        else:
+            note_msg = "Safe retry enqueued (failed prior to spooler submission)."
+
+        job.error_message = None
+        job.spooler_job_id = None
+        return cls.transition_status(db, job, JobStatus.QUEUED, message=note_msg)
+
+    @classmethod
+    def reconcile_stale_jobs(
+        cls,
+        db: Session,
+        dispatched_timeout_seconds: int = 300,
+        printing_timeout_seconds: int = 900,
+        pending_timeout_seconds: int = 900
+    ) -> Dict[str, int]:
+        """
+        Crash recovery & queue health reconciliation:
+        1. Recovers jobs stuck in DISPATCHED after agent crash.
+        2. Recovers jobs stuck in SUBMITTED_TO_SPOOLER/PRINTING after spooler crash.
+        3. Expires abandoned PAYMENT_PENDING checkout sessions.
+        """
+        now = datetime.now(timezone.utc)
+        results = {
+            "recovered_dispatched": 0,
+            "recovered_spooling": 0,
+            "expired_pending": 0,
+            "total_processed": 0
+        }
+
+        # 1. Stalled DISPATCHED jobs
+        dispatched_cutoff = now - timedelta(seconds=dispatched_timeout_seconds)
+        dispatched_jobs = db.query(PrintJob).filter(
+            PrintJob.status == JobStatus.DISPATCHED,
+            PrintJob.updated_at <= dispatched_cutoff
+        ).all()
+        for j in dispatched_jobs:
+            try:
+                cls.transition_status(
+                    db,
+                    j,
+                    JobStatus.FAILED,
+                    message="Crash recovery: Agent dispatch timed out before spooler confirmation.",
+                    error_message="Dispatch timeout (agent offline or network interrupted)."
+                )
+                results["recovered_dispatched"] += 1
+            except Exception as e:
+                logger.error(f"Error recovering dispatched job {j.job_number}: {e}")
+
+        # 2. Stalled SUBMITTED_TO_SPOOLER or PRINTING jobs
+        printing_cutoff = now - timedelta(seconds=printing_timeout_seconds)
+        printing_jobs = db.query(PrintJob).filter(
+            PrintJob.status.in_([JobStatus.SUBMITTED_TO_SPOOLER, JobStatus.PRINTING]),
+            PrintJob.updated_at <= printing_cutoff
+        ).all()
+        for j in printing_jobs:
+            try:
+                cls.transition_status(
+                    db,
+                    j,
+                    JobStatus.FAILED,
+                    message="Crash recovery: Spooler confirmation timed out. Physical inspection required.",
+                    error_message="Spooler confirmation timeout (possible paper out, paper jam, or spooler crash)."
+                )
+                results["recovered_spooling"] += 1
+            except Exception as e:
+                logger.error(f"Error recovering printing job {j.job_number}: {e}")
+
+        # 3. Expired PAYMENT_PENDING jobs
+        pending_cutoff = now - timedelta(seconds=pending_timeout_seconds)
+        pending_jobs = db.query(PrintJob).filter(
+            PrintJob.status == JobStatus.PAYMENT_PENDING,
+            PrintJob.created_at <= pending_cutoff
+        ).all()
+        for j in pending_jobs:
+            try:
+                cls.transition_status(
+                    db,
+                    j,
+                    JobStatus.EXPIRED,
+                    message="Checkout session expired after 15 minutes of inactivity."
+                )
+                results["expired_pending"] += 1
+            except Exception as e:
+                logger.error(f"Error expiring pending job {j.job_number}: {e}")
+
+        results["total_processed"] = (
+            results["recovered_dispatched"] + results["recovered_spooling"] + results["expired_pending"]
+        )
+        if results["total_processed"] > 0:
+            logger.info(f"Reconciliation sweep completed: {results}")
+        return results
 

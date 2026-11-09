@@ -18,3 +18,4 @@ data/*
 !data/.gitkeep
 .env
 .env.local
+

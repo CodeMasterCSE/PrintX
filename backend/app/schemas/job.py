@@ -40,6 +40,11 @@ class JobEventResponse(BaseModel):
     created_at: datetime
 
 
+class JobRetryRequest(BaseModel):
+    force_retry: bool = False
+    operator_notes: Optional[str] = None
+
+
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,6 +57,8 @@ class JobResponse(BaseModel):
     error_message: Optional[str] = None
     spooler_job_id: Optional[int] = None
     idempotency_key: str
+    queue_position: Optional[int] = None
+    estimated_wait_seconds: Optional[int] = None
     document_id: str
     document: Optional[DocumentResponse] = None
     printer_id: Optional[str] = None
@@ -61,6 +68,20 @@ class JobResponse(BaseModel):
     events: Optional[List[JobEventResponse]] = None
     created_at: datetime
     updated_at: datetime
+
+
+class JobListResponse(BaseModel):
+    total: int
+    items: List[JobResponse]
+    limit: int
+    offset: int
+
+
+class ReconciliationResult(BaseModel):
+    recovered_dispatched: int
+    recovered_spooling: int
+    expired_pending: int
+    total_processed: int
 
 
 class JobStatusUpdate(BaseModel):

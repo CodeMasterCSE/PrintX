@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Production PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: printx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: printx_prod
+      POSTGRES_USER: printx_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-printx_secure_pwd_change_in_prod}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U printx_user -d printx_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PrintX FastAPI Cloud Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: printx-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg2://printx_user:${POSTGRES_PASSWORD:-printx_secure_pwd_change_in_prod}@db:5432/printx_prod
+      JWT_SECRET: ${JWT_SECRET:-please_generate_a_secure_jwt_secret_for_production}
+      UPLOAD_DIR: /app/uploads
+      CORS_ORIGINS: '["https://printx.yourdomain.com", "http://localhost:5173", "http://localhost:3000"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_uploads:/app/uploads
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.database.init_db &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_uploads:
+    driver: local

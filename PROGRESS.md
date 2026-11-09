@@ -82,18 +82,17 @@
   - Completed physical prints strictly block refunds (`Cannot refund a completed print job: paper physically exited the printer`).
 
 ### E. Complete Student Web Application (`frontend/`)
-- **Step 1: Upload Document:** Drag-and-drop dropzone, file size, page count extraction, first-page preview.
-- **Step 2: Configure Printing:** A4, Grayscale (₹2/page) vs Color (₹10/page), copies (1-10), page range, simplex notice, live cost estimate.
-- **Step 3: Review Order:** Comprehensive breakdown with Grand Total.
-- **Step 4: Payment:** UPI QR code generation, mock approval simulation, live status polling.
-- **Step 5: Printing Status:** Real-time Spooler progress stepper with truthful state labels.
-- **Step 6: Digital Receipt:** Job reference, transaction reference, printable/downloadable proof.
-- **User Dashboard (`/dashboard`):** Real-time print job table with status badges and KPI metrics.
-- **Admin Dashboard (`/admin`):** Hardware telemetry, revenue analytics, queue depths, live pricing rate editor.
+- **Step 1: Upload Document:** Drag-and-drop dropzone, file picker, file size caps, page count extraction, first-page PNG preview rendered by PyMuPDF (`/api/v1/documents/{id}/preview?page=1`).
+- **Step 2: Configure Printing:** A4 standard, Grayscale (₹2/page) vs Color (₹10/page), copies (1-10), custom page ranges (`1-3,5`), strict single-sided (simplex) policy banner for HP Smart Tank 585 hardware protection, and live estimated cost calculator.
+- **Step 3: Review Order:** Transparent cost breakdown (subtotal, copies multiplier, base fee, grand total) with authoritative server validation.
+- **Step 4: Payment:** Real-time UPI payment flow featuring server-rendered high-res Base64 and PNG QR code display, "Open UPI App" mobile deep linking, mock approval sandbox controls, and active server status polling.
+- **Step 5: Printing Status:** Truthful Spooler progress stepper displaying live queue position (#1, #2 in line) and estimated wait times, clear distinctions between spooler reception and paper ejection, and an inline failure alert with duplicate-safe retry controls.
+- **Step 6: Digital Receipt:** Job reference, transaction reference, printable/downloadable proof (`window.print()`), and instant "Start New Job" CTA.
+- **User Dashboard (`/dashboard`):** Real-time print job table with status badges, KPI metrics, printable digital receipt viewer modal, and safe retry controls for interrupted print jobs.
 
 ---
 
-## 3. Automated Test Verification (53 Total Tests)
+## 3. Automated Test Verification (56 Total Tests)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
@@ -103,9 +102,9 @@
 | Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
 | Payment Gateway & Webhooks | `backend/tests/test_payments.py` | 9 | **9 PASSED** | 1.49s |
 | Pricing Rules Engine | `backend/tests/test_pricing.py` | 4 | **4 PASSED** | 0.2s |
-| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.50s |
-| Frontend Configuration | `frontend/src/tests/` | 3 | **3 PASSED** | 2.5s |
-| **Total** | | **53** | **53 PASSED (0 failures)** | |
+| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.39s |
+| Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.7s |
+| **Total** | | **56** | **56 PASSED (0 failures)** | |
 
 ---
 

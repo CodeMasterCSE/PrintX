@@ -93,6 +93,10 @@ export const api = {
   getJob: (jobId: string) => request<any>(`/jobs/${jobId}`),
   listJobs: () => request<any[]>('/jobs'),
   cancelJob: (jobId: string) => request<any>(`/jobs/${jobId}/cancel`, { method: 'POST' }),
+  retryJob: (jobId: string, forceRetry: boolean = false, notes?: string) => request<any>(`/jobs/${jobId}/retry`, {
+    method: 'POST',
+    body: JSON.stringify({ force_retry: forceRetry, operator_notes: notes }),
+  }),
 
   // Payments
   createPayment: (payload: {

@@ -71,11 +71,13 @@ export interface PaymentInfo {
   order_id: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'verified' | 'failed' | 'expired';
+  status: 'pending' | 'verified' | 'failed' | 'expired' | 'refunded';
   provider: string;
   payment_method: string;
   gateway_transaction_id?: string;
   upi_qr_data?: string;
+  qr_code_base64?: string;
+  is_mock?: boolean;
   created_at: string;
 }
 
@@ -111,6 +113,8 @@ export interface PrintJob {
   error_message?: string;
   spooler_job_id?: number;
   idempotency_key: string;
+  queue_position?: number;
+  estimated_wait_seconds?: number;
   document_id: string;
   document?: DocumentInfo;
   configuration?: PrintConfig;

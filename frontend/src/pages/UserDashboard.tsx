@@ -1,11 +1,26 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { FileText, Clock, CheckCircle, AlertTriangle, ArrowUpRight, RotateCcw, Printer } from 'lucide-react';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { 
+  FileText, 
+  Clock, 
+  CheckCircle, 
+  AlertTriangle, 
+  RotateCcw, 
+  Printer, 
+  Receipt as ReceiptIcon,
+  X,
+  Download,
+  AlertCircle
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PrintJob } from '../types';
 
 export const UserDashboard: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [selectedJobForReceipt, setSelectedJobForReceipt] = useState<PrintJob | null>(null);
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+
   const { data: jobs, isLoading } = useQuery({
     queryKey: ['user-jobs'],
     queryFn: api.listJobs,
@@ -14,9 +29,26 @@ export const UserDashboard: React.FC = () => {
 
   const jobList: PrintJob[] = jobs || [];
   const completedJobs = jobList.filter((j) => j.status === 'COMPLETED');
-  const pendingJobs = jobList.filter((j) => ['PAYMENT_PENDING', 'PAYMENT_VERIFIED', 'QUEUED', 'DISPATCHED', 'SUBMITTED_TO_SPOOLER', 'PRINTING'].includes(j.status));
+  const pendingJobs = jobList.filter((j) => 
+    ['PAYMENT_PENDING', 'PAYMENT_VERIFIED', 'QUEUED', 'DISPATCHED', 'SUBMITTED_TO_SPOOLER', 'PRINTING'].includes(j.status)
+  );
   const failedJobs = jobList.filter((j) => j.status === 'FAILED');
   const totalSpent = completedJobs.reduce((acc, j) => acc + j.price, 0);
+
+  const handleRetryJob = async (job: PrintJob) => {
+    if (!confirm(`Are you sure you want to retry job ${job.job_number}?\n\nDuplicate Protection Warning: Verify the HP Smart Tank 585 tray to ensure paper did not already print.`)) {
+      return;
+    }
+    setRetryingJobId(job.id);
+    try {
+      await api.retryJob(job.id, true, "User retry from dashboard");
+      queryClient.invalidateQueries({ queryKey: ['user-jobs'] });
+    } catch (err: any) {
+      alert(`Retry failed: ${err.message}`);
+    } finally {
+      setRetryingJobId(null);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -26,7 +58,7 @@ export const UserDashboard: React.FC = () => {
             Student Dashboard
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Track your recent print jobs, download receipts, and view payment histories.
+            Track your recent print jobs, download digital receipts, and manage print orders.
           </p>
         </div>
         <Link
@@ -83,6 +115,7 @@ export const UserDashboard: React.FC = () => {
                   <th className="px-6 py-3">Amount</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3">Created</th>
+                  <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -105,6 +138,27 @@ export const UserDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-400">{new Date(j.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-right space-x-2">
+                      {j.status === 'COMPLETED' && (
+                        <button
+                          onClick={() => setSelectedJobForReceipt(j)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                        >
+                          <ReceiptIcon className="w-3.5 h-3.5" />
+                          Receipt
+                        </button>
+                      )}
+                      {j.status === 'FAILED' && (
+                        <button
+                          onClick={() => handleRetryJob(j)}
+                          disabled={retryingJobId === j.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold transition-colors disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Retry
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -112,6 +166,75 @@ export const UserDashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Digital Receipt Modal */}
+      {selectedJobForReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl relative border border-slate-200">
+            <button
+              onClick={() => setSelectedJobForReceipt(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center pb-4 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-2">
+                <ReceiptIcon className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">PrintX Digital Receipt</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Automated Self-Service Document Center</p>
+            </div>
+
+            <div className="py-4 space-y-2.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Job Reference</span>
+                <span className="font-mono font-bold text-slate-900">{selectedJobForReceipt.job_number}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Document</span>
+                <span className="font-medium text-slate-900">{selectedJobForReceipt.document?.original_filename || 'PDF Document'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Pages Printed</span>
+                <span className="text-slate-900">{selectedJobForReceipt.total_pages} page(s)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Copies</span>
+                <span className="text-slate-900">{selectedJobForReceipt.configuration?.copies || 1}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mode</span>
+                <span className="text-slate-900 capitalize">{selectedJobForReceipt.configuration?.color_mode || 'Grayscale'} (A4 Simplex)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Timestamp</span>
+                <span className="text-slate-700">{new Date(selectedJobForReceipt.created_at).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-100 pt-2 font-bold text-sm">
+                <span className="text-slate-900">Total Paid</span>
+                <span className="text-emerald-600">₹{selectedJobForReceipt.price.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={() => window.print()}
+                className="flex-1 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Print Receipt
+              </button>
+              <button
+                onClick={() => setSelectedJobForReceipt(null)}
+                className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

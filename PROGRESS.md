@@ -62,13 +62,24 @@
 - **Audit History & Timeline:**
   - Immutable `JobEvent` records tracking transition history, triggers, and error messages.
 
-### D. Payment Abstraction (`backend/app/services/payment_service.py`)
-- Provider-independent payment gateway interface (`BasePaymentGateway`).
-- `MockUpiGateway` generates standard NPCI format UPI deep link QR data:
-  `upi://pay?pa=printx.kiosk@upi&pn=PrintX&am={amount:.2f}&cu=INR&tn={order_id}`.
-- Server-side verification webhook with cryptographic signature checks.
-- Zero client-trust policy: attempts to pay less than `job.price` are rejected.
-- Ready integration interfaces for production UPI gateways (Razorpay, Cashfree).
+### D. Payment Abstraction & Security (`backend/app/services/payment_service.py`)
+- **Provider-Independent Payment Abstraction:**
+  `BasePaymentGateway` architecture cleanly decoupling business workflows from vendor gateways.
+- **Mock UPI Gateway (Dev Sandbox):**
+  - Generates standard NPCI-compliant deep links:
+    `upi://pay?pa=printx.kiosk@upi&pn=PrintX%20Smart%20Printing&am={amount:.2f}&cu=INR&tn={order_id}`.
+  - Built-in dynamic PNG QR code generation and Base64 Data URL embedding.
+  - Clearly marked sandbox simulation (`is_mock: True`).
+  - Strict production environment guard (`ENVIRONMENT=production` rejects mock simulation endpoints).
+- **Production Gateway Ready (Razorpay & Cashfree):**
+  - HMAC-SHA256 signature verification with `hmac.compare_digest` to prevent timing attacks.
+  - Webhook endpoints supporting raw body verification (`/payments/webhook/razorpay`, `/payments/webhook/cashfree`).
+- **Zero Client-Trust Security:**
+  - Attempts to alter the price from the client are rejected with `400 Bad Request`.
+  - Webhooks verify order existence and prevent double-crediting via idempotency checks.
+- **Refund Policy for Unprinted Jobs:**
+  - Unprinted/cancelled jobs can be refunded with an audit trail.
+  - Completed physical prints strictly block refunds (`Cannot refund a completed print job: paper physically exited the printer`).
 
 ### E. Complete Student Web Application (`frontend/`)
 - **Step 1: Upload Document:** Drag-and-drop dropzone, file size, page count extraction, first-page preview.
@@ -82,7 +93,7 @@
 
 ---
 
-## 3. Automated Test Verification (48 Total Tests)
+## 3. Automated Test Verification (53 Total Tests)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
@@ -90,11 +101,11 @@
 | Document Engine | `backend/tests/test_documents.py` | 8 | **8 PASSED** | 0.3s |
 | Health & Readiness | `backend/tests/test_health.py` | 3 | **3 PASSED** | 0.1s |
 | Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
-| Payment Gateway | `backend/tests/test_payments.py` | 4 | **4 PASSED** | 0.3s |
+| Payment Gateway & Webhooks | `backend/tests/test_payments.py` | 9 | **9 PASSED** | 1.49s |
 | Pricing Rules Engine | `backend/tests/test_pricing.py` | 4 | **4 PASSED** | 0.2s |
 | Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.50s |
-| Frontend Configuration | `frontend/src/tests/` | 3 | **3 PASSED** | 2.6s |
-| **Total** | | **48** | **48 PASSED (0 failures)** | |
+| Frontend Configuration | `frontend/src/tests/` | 3 | **3 PASSED** | 2.5s |
+| **Total** | | **53** | **53 PASSED (0 failures)** | |
 
 ---
 

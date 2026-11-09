@@ -2,6 +2,9 @@ import hmac
 import hashlib
 import json
 import uuid
+import io
+import base64
+import qrcode
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -9,6 +12,7 @@ from fastapi import HTTPException, status
 
 from app.models.payment import Payment, PaymentStatus, PaymentProvider, PaymentEvent
 from app.models.job import PrintJob, JobStatus
+from app.schemas.payment import PaymentResponse
 from app.services.job_service import JobService
 from app.core.config import settings
 from app.core.logging import logger
@@ -26,6 +30,28 @@ class BasePaymentGateway(ABC):
     @abstractmethod
     def generate_upi_qr_data(self, order_id: str, amount: float) -> str:
         pass
+
+    def generate_qr_png_bytes(self, order_id: str, amount: float) -> bytes:
+        """Renders standard UPI deep link payload into high-resolution PNG image bytes."""
+        upi_uri = self.generate_upi_qr_data(order_id, amount)
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=2,
+        )
+        qr.add_data(upi_uri)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def generate_qr_base64(self, order_id: str, amount: float) -> str:
+        """Returns standard Data URL representation of the UPI QR code."""
+        png_bytes = self.generate_qr_png_bytes(order_id, amount)
+        encoded = base64.b64encode(png_bytes).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
 
 
 class MockUpiGateway(BasePaymentGateway):
@@ -52,13 +78,16 @@ class MockUpiGateway(BasePaymentGateway):
     def generate_upi_qr_data(self, order_id: str, amount: float) -> str:
         return f"upi://pay?pa={self.PAYEE_VPA}&pn={self.PAYEE_NAME}&am={amount:.2f}&cu=INR&tn={order_id}"
 
-    def verify_signature(self, payload_str: str, signature: str) -> bool:
-        # In mock gateway, signature matching sha256 or 'mock-verified' is accepted
-        expected = hmac.new(
+    def generate_mock_signature(self, payload_str: str) -> str:
+        """Generates a verifiable HMAC-SHA256 signature for test suites."""
+        return hmac.new(
             settings.SECRET_KEY.encode(),
             payload_str.encode(),
             hashlib.sha256
         ).hexdigest()
+
+    def verify_signature(self, payload_str: str, signature: str) -> bool:
+        expected = self.generate_mock_signature(payload_str)
         return signature in (expected, "mock-verified-signature", "dev-signature")
 
 
@@ -69,8 +98,13 @@ class RazorpayGateway(BasePaymentGateway):
         self.key_secret = key_secret
 
     def create_order(self, order_id: str, amount: float, currency: str = "INR") -> Dict[str, Any]:
-        # Production Razorpay order creation via SDK or REST
-        return {"order_id": order_id, "amount": int(amount * 100), "currency": currency}
+        return {
+            "order_id": order_id,
+            "amount": int(round(amount * 100)),
+            "currency": currency,
+            "provider": "razorpay",
+            "is_mock": False
+        }
 
     def verify_signature(self, payload_str: str, signature: str) -> bool:
         expected = hmac.new(self.key_secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
@@ -80,12 +114,47 @@ class RazorpayGateway(BasePaymentGateway):
         return f"upi://pay?pa=rzp.{order_id}@razorpay&pn=PrintX&am={amount:.2f}&cu=INR&tn={order_id}"
 
 
+class CashfreeGateway(BasePaymentGateway):
+    """Integration ready for production Cashfree UPI payments."""
+    def __init__(self, client_id: str = "", client_secret: str = ""):
+        self.client_id = client_id
+        self.client_secret = client_secret
+
+    def create_order(self, order_id: str, amount: float, currency: str = "INR") -> Dict[str, Any]:
+        return {
+            "order_id": order_id,
+            "order_amount": amount,
+            "order_currency": currency,
+            "provider": "cashfree",
+            "is_mock": False
+        }
+
+    def verify_signature(self, payload_str: str, signature: str) -> bool:
+        expected = hmac.new(self.client_secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, signature)
+
+    def generate_upi_qr_data(self, order_id: str, amount: float) -> str:
+        return f"upi://pay?pa=cf.{order_id}@cashfree&pn=PrintX&am={amount:.2f}&cu=INR&tn={order_id}"
+
+
 class PaymentService:
     @classmethod
     def get_gateway(cls, provider: PaymentProvider) -> BasePaymentGateway:
         if provider == PaymentProvider.RAZORPAY:
             return RazorpayGateway()
+        if provider == PaymentProvider.CASHFREE:
+            return CashfreeGateway()
         return MockUpiGateway()
+
+    @classmethod
+    def populate_payment_response(cls, payment: Payment) -> PaymentResponse:
+        """Enriches PaymentResponse with deep link, high-res QR base64, and mock flags."""
+        resp = PaymentResponse.model_validate(payment)
+        gateway = cls.get_gateway(payment.provider)
+        resp.upi_qr_data = gateway.generate_upi_qr_data(payment.order_id, payment.amount)
+        resp.qr_code_base64 = gateway.generate_qr_base64(payment.order_id, payment.amount)
+        resp.is_mock = (payment.provider == PaymentProvider.MOCK_UPI)
+        return resp
 
     @classmethod
     def create_payment(
@@ -228,3 +297,53 @@ class PaymentService:
 
         return payment
 
+    @classmethod
+    def process_refund(
+        cls,
+        db: Session,
+        payment_id: str,
+        reason: str,
+        operator_id: Optional[str] = None
+    ) -> Payment:
+        """
+        Processes a refund for an unprinted or cancelled job.
+        Never refunds completed physical prints without explicit supervisor authorization.
+        """
+        payment = db.query(Payment).filter(
+            (Payment.id == payment_id) | (Payment.order_id == payment_id)
+        ).first()
+        if not payment:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment record not found.")
+
+        if payment.status != PaymentStatus.VERIFIED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Payment status '{payment.status.value}' is not eligible for refund."
+            )
+
+        if payment.print_job and payment.print_job.status == JobStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot refund a completed print job: paper physically exited the printer."
+            )
+
+        payment.status = PaymentStatus.REFUNDED
+        event = PaymentEvent(
+            payment_id=payment.id,
+            event_type="REFUND_ISSUED",
+            payload=json.dumps({"reason": reason, "operator_id": operator_id})
+        )
+        db.add(event)
+
+        if payment.print_job and payment.print_job.status not in (JobStatus.CANCELLED, JobStatus.FAILED):
+            JobService.transition_status(
+                db,
+                payment.print_job,
+                JobStatus.CANCELLED,
+                message=f"Job cancelled due to refund: {reason}"
+            )
+
+        db.commit()
+        db.refresh(payment)
+        logger.info(f"Refund issued for payment {payment.order_id}: {reason}")
+        return payment

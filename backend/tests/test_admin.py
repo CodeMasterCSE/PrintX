@@ -143,3 +143,34 @@ def test_admin_set_default_printer(client, db_session):
     # Verify Printer A is no longer default
     db_session.refresh(p1)
     assert p1.is_default is False
+
+
+def test_admin_register_and_list_print_agents(client):
+    # 1. Register new agent
+    payload = {
+        "name": "Library Windows 11 Node",
+        "hostname": "WIN11-LIB-01",
+        "ip_address": "192.168.1.105"
+    }
+    reg_res = client.post("/api/v1/admin/agents/register", json=payload)
+    assert reg_res.status_code == 201
+    data = reg_res.json()
+    assert "agent_id" in data
+    assert data["agent_id"].startswith("AGENT-WIN11-")
+    assert "agent_secret" in data
+    assert data["agent_secret"].startswith("px_sec_")
+    assert data["name"] == "Library Windows 11 Node"
+
+    # 2. List print agents
+    list_res = client.get("/api/v1/admin/agents")
+    assert list_res.status_code == 200
+    agents = list_res.json()
+    assert len(agents) >= 1
+    agent_ids = [a["agent_id"] for a in agents]
+    assert data["agent_id"] in agent_ids
+    # Verify raw secret is NOT leaked in the list response
+    for a in agents:
+        assert "agent_secret" not in a
+        assert "secret_hash" not in a
+
+

@@ -57,3 +57,16 @@ class AdminKioskCreateRequest(BaseModel):
 
 class AdminPrinterToggleRequest(BaseModel):
     is_online: bool
+
+
+class AdminAgentRegisterRequest(BaseModel):
+    name: str
+    hostname: Optional[str] = None
+    ip_address: Optional[str] = None
+
+
+class AdminAgentRegisterResponse(BaseModel):
+    agent_id: str
+    name: str
+    agent_secret: str
+    created_at: datetime

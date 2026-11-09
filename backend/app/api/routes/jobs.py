@@ -17,6 +17,7 @@ from app.schemas.job import (
 from app.schemas.common import MessageResponse
 from app.services.job_service import JobService, JobTransitionError
 from app.services.auth_service import get_current_user
+from app.storage.storage_provider import get_storage_provider
 from app.core.logging import logger
 from app.core.security import verify_password
 from app.core.config import settings
@@ -163,12 +164,19 @@ def agent_pull_next_job(
     if not job:
         return {"job": None, "message": "No jobs currently queued."}
 
+    storage_provider = get_storage_provider()
+    local_path = storage_provider.get_local_path(job.document.storage_path)
+    if local_path and local_path.exists():
+        doc_dispatch_path = str(local_path)
+    else:
+        doc_dispatch_path = storage_provider.generate_download_url(job.document.storage_path, job.document.id)
+
     return {
         "job": {
             "id": job.id,
             "job_number": job.job_number,
             "status": job.status.value,
-            "document_path": job.document.storage_path,
+            "document_path": doc_dispatch_path,
             "document_name": job.document.original_filename,
             "price": job.price,
             "idempotency_key": job.idempotency_key,

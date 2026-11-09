@@ -1,4 +1,6 @@
 from datetime import datetime, timezone, timedelta
+import secrets
+import uuid
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -20,7 +22,9 @@ from app.schemas.admin import (
     SystemSettingItem,
     SystemSettingsUpdateRequest,
     AdminKioskCreateRequest,
-    AdminPrinterToggleRequest
+    AdminPrinterToggleRequest,
+    AdminAgentRegisterRequest,
+    AdminAgentRegisterResponse
 )
 from app.schemas.pricing import PricingRuleResponse, PricingRuleUpdate
 from app.schemas.job import JobResponse
@@ -29,6 +33,7 @@ from app.schemas.kiosk import KioskResponse
 from app.schemas.printer import PrinterResponse
 from app.services.auth_service import require_admin_user, get_current_user
 from app.services.job_service import JobService
+from app.core.security import get_password_hash
 from app.core.logging import logger
 
 router = APIRouter(prefix="/admin", tags=["Admin Operations"])
@@ -253,3 +258,56 @@ def set_default_printer(printer_id: str, db: Session = Depends(get_db)):
     db.refresh(target)
     logger.info(f"Printer '{target.name}' set as global system default.")
     return PrinterResponse.model_validate(target)
+
+
+@router.post("/agents/register", response_model=AdminAgentRegisterResponse, status_code=status.HTTP_201_CREATED)
+def register_print_agent(req: AdminAgentRegisterRequest, db: Session = Depends(get_db)):
+    """
+    Registers a new Windows Print Agent machine.
+    Generates a unique agent_id and cryptographically secure secret token.
+    The raw secret is only returned once upon initial creation.
+    """
+    agent_id = f"AGENT-WIN11-{uuid.uuid4().hex[:6].upper()}"
+    raw_secret = f"px_sec_{secrets.token_urlsafe(32)}"
+    secret_hash = get_password_hash(raw_secret)
+
+    agent = PrintAgent(
+        agent_id=agent_id,
+        name=req.name,
+        secret_hash=secret_hash,
+        is_active=True,
+        hostname=req.hostname,
+        ip_address=req.ip_address,
+        version="1.0.0"
+    )
+    db.add(agent)
+    db.commit()
+    db.refresh(agent)
+    logger.info(f"Registered new Windows Print Agent device: {agent_id} ({agent.name})")
+
+    return AdminAgentRegisterResponse(
+        agent_id=agent.agent_id,
+        name=agent.name,
+        agent_secret=raw_secret,
+        created_at=agent.created_at
+    )
+
+
+@router.get("/agents")
+def list_print_agents(db: Session = Depends(get_db)):
+    """Lists registered print agents and their last heartbeat timestamp."""
+    agents = db.query(PrintAgent).all()
+    return [
+        {
+            "id": a.id,
+            "agent_id": a.agent_id,
+            "name": a.name,
+            "is_active": a.is_active,
+            "last_heartbeat": a.last_heartbeat,
+            "hostname": a.hostname,
+            "ip_address": a.ip_address,
+            "version": a.version,
+            "created_at": a.created_at
+        }
+        for a in agents
+    ]

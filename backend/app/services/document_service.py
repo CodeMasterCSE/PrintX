@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.models.document import Document, DocumentStatus
 from app.models.user import User
+from app.storage.storage_provider import get_storage_provider
 
 
 class DocumentValidationError(Exception):
@@ -114,12 +115,9 @@ class DocumentService:
         """
         info = cls.validate_and_extract_pdf(file_bytes, original_filename)
 
-        storage_dir = settings.resolved_storage_path
-        stored_filename = f"{uuid.uuid4().hex}.pdf"
-        target_path = storage_dir / stored_filename
-
-        # Write sanitized file to disk
-        target_path.write_bytes(file_bytes)
+        storage_provider = get_storage_provider()
+        stored_path = storage_provider.save_file(file_bytes, original_filename)
+        stored_filename = Path(stored_path).name
 
         # Set expiration retention policy (default 24 hours)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.DOCUMENT_RETENTION_HOURS)
@@ -132,7 +130,7 @@ class DocumentService:
             page_count=info["page_count"],
             is_encrypted=False,
             is_color=info["is_color"],
-            storage_path=str(target_path),
+            storage_path=stored_path,
             sha256_checksum=info["sha256"],
             status=DocumentStatus.VALIDATED,
             expires_at=expires_at,
@@ -150,15 +148,10 @@ class DocumentService:
         """
         Generates a PNG thumbnail preview for the specified page number.
         """
-        file_path = Path(document.storage_path)
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Physical document file not found on disk."
-            )
-
+        storage_provider = get_storage_provider()
         try:
-            doc = fitz.open(str(file_path))
+            file_bytes = storage_provider.get_file_bytes(document.storage_path)
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
             if page_number < 1 or page_number > doc.page_count:
                 page_number = 1
             page = doc[page_number - 1]
@@ -177,16 +170,18 @@ class DocumentService:
     @classmethod
     def delete_document(cls, db: Session, document: Document) -> None:
         """
-        Deletes physical file and marks/removes database record.
+        Deletes stored file and marks/removes database record.
         """
-        file_path = Path(document.storage_path)
-        if file_path.exists():
-            try:
-                file_path.unlink()
-            except Exception as e:
-                logger.warning(f"Could not remove physical file {file_path}: {str(e)}")
+        storage_provider = get_storage_provider()
+        storage_provider.delete_file(document.storage_path)
 
         db.delete(document)
         db.commit()
         logger.info(f"Purged document {document.id}")
+
+    @classmethod
+    def get_download_url(cls, document: Document) -> str:
+        """Returns download / pre-signed URL."""
+        storage_provider = get_storage_provider()
+        return storage_provider.generate_download_url(document.storage_path, document.id)
 

@@ -9,6 +9,7 @@ from app.schemas.document import DocumentResponse, DocumentUploadResponse
 from app.schemas.common import MessageResponse
 from app.services.document_service import DocumentService, DocumentValidationError
 from app.services.auth_service import get_current_user
+from app.storage.storage_provider import get_storage_provider
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -72,6 +73,22 @@ def get_document_preview(document_id: str, page: int = 1, db: Session = Depends(
 
     image_bytes = DocumentService.generate_preview(doc, page_number=page)
     return Response(content=image_bytes, media_type="image/png")
+
+
+@router.get("/{document_id}/download")
+def download_document(document_id: str, db: Session = Depends(get_db)):
+    """Downloads binary document content for Windows Print Controller or client."""
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    storage_provider = get_storage_provider()
+    file_bytes = storage_provider.get_file_bytes(doc.storage_path)
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"'}
+    )
 
 
 @router.delete("/{document_id}", response_model=MessageResponse)

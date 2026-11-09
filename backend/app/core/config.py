@@ -26,10 +26,17 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./printx.db"
 
-    # Storage
+    # Storage & Object Cloud Backend
+    STORAGE_BACKEND: str = "local"  # "local" | "s3"
     STORAGE_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
     DOCUMENT_RETENTION_HOURS: int = 24
+    S3_ENDPOINT_URL: Union[str, None] = None
+    S3_BUCKET_NAME: str = "printx-documents"
+    S3_REGION_NAME: str = "us-east-1"
+    S3_ACCESS_KEY: Union[str, None] = None
+    S3_SECRET_KEY: Union[str, None] = None
+    SERVER_PUBLIC_URL: str = "http://127.0.0.1:8000"
 
     # Printer & Agent Defaults
     DEFAULT_PRINTER_NAME: str = "HP Smart Tank 580-590 series"

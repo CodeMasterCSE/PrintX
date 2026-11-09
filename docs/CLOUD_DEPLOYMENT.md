@@ -242,3 +242,4 @@ Register-ScheduledTask -TaskName "PrintXAgentService" -Action $Action -Trigger $
 | **Spooler status: `JOB_STATUS_OFFLINE`** | USB cable disconnected or printer asleep | Check USB 2.0 connection. Press printer Power button to wake. |
 | **Job stuck in `SUBMITTED_TO_SPOOLER`** | Windows Print Spooler service hung | Restart spooler via PowerShell: `Restart-Service Spooler -Force`. Agent will recover pending queue. |
 | **Duplicate print attempts blocked** | Re-entry safeguard triggered | Check `processed_jobs.json`. To force a reprint after mechanical paper jam, use Admin Dashboard with "Force Reprocess". |
+

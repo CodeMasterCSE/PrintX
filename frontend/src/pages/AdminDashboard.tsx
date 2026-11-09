@@ -519,8 +519,18 @@ export const AdminDashboard: React.FC = () => {
                   <MapPin className="w-3.5 h-3.5 text-slate-400" />
                   {k.location}
                 </p>
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
-                  QR URL: <span className="font-mono text-slate-600">/print?device={k.code}</span>
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                  <div>
+                    QR: <span className="font-mono text-slate-600">/print?device={k.code}</span>
+                  </div>
+                  <a
+                    href={`/kiosk/${k.code}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-2 py-1 rounded transition-colors"
+                  >
+                    Launch Display &rarr;
+                  </a>
                 </div>
               </div>
             ))}

@@ -1,10 +1,13 @@
+import io
+import qrcode
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.models.kiosk import Kiosk
 from app.models.pricing import PricingRule
 from app.schemas.kiosk import KioskResponse, KioskConfigResponse
+from app.core.config import settings
 
 router = APIRouter(prefix="/kiosks", tags=["Kiosks"])
 
@@ -50,4 +53,28 @@ def get_kiosk_configuration(kiosk_id: str, db: Session = Depends(get_db)):
         per_page_bw=per_page_bw,
         per_page_color=per_page_color
     )
+
+
+@router.get("/{kiosk_id}/qr.png")
+def get_kiosk_qr_png(kiosk_id: str, db: Session = Depends(get_db)):
+    """Streams a high-resolution PNG QR code for this kiosk."""
+    kiosk = db.query(Kiosk).filter((Kiosk.id == kiosk_id) | (Kiosk.code == kiosk_id)).first()
+    if not kiosk:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kiosk not found")
+
+    portal_url = f"{settings.SERVER_PUBLIC_URL}/print?device={kiosk.code}"
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(portal_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
 

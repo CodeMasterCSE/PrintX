@@ -12,6 +12,7 @@ from app.schemas.job import (
     JobStatusUpdate,
     JobEventResponse,
     JobRetryRequest,
+    JobReceiptResponse,
     ReconciliationResult
 )
 from app.schemas.common import MessageResponse
@@ -118,6 +119,45 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
     return JobService.populate_job_response(db, job)
+
+
+@router.get("/{job_id}/receipt", response_model=JobReceiptResponse)
+def get_job_receipt(job_id: str, db: Session = Depends(get_db)):
+    """Retrieves an official immutable digital receipt for a print job."""
+    job = db.query(PrintJob).filter(PrintJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
+
+    tx_ref = None
+    if job.payment and job.payment.gateway_transaction_id:
+        tx_ref = job.payment.gateway_transaction_id
+    elif job.payment:
+        tx_ref = job.payment.order_id
+
+    # Find completion timestamp from audit events if available
+    completed_time = None
+    for ev in job.events:
+        if ev.new_status == "COMPLETED":
+            completed_time = ev.created_at
+            break
+
+    # Document pages count in selected range
+    pages_count = job.total_pages
+
+    return JobReceiptResponse(
+        job_id=job.id,
+        job_number=job.job_number,
+        transaction_reference=tx_ref,
+        document_name=job.document.original_filename if job.document else "document.pdf",
+        pages_count=pages_count,
+        copies=job.configuration.copies if job.configuration else 1,
+        printing_mode=job.configuration.color_mode.value if job.configuration else "grayscale",
+        total_price=job.price,
+        status=job.status.value,
+        created_at=job.created_at,
+        completed_at=completed_time or job.updated_at
+    )
+
 
 
 @router.post("/{job_id}/cancel", response_model=JobResponse)

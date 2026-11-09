@@ -177,3 +177,4 @@ def get_storage_provider() -> BaseStorageProvider:
     if settings.STORAGE_BACKEND.lower() == "s3":
         return S3StorageProvider()
     return LocalStorageProvider()
+

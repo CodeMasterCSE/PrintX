@@ -42,7 +42,7 @@ PrintX is an open-source, production-grade smart self-service document printing 
 - **Admin Dashboard (`/admin`):**
   - **Overview & Telemetry:** Gross, daily, weekly, and monthly revenue metrics, total pages printed, spooler queue depth, active print agent count, and system health status.
   - **Printer Queue Management:** Hardware status inspection, maintenance mode toggle (`READY` / `MAINTENANCE`), and global default printer designation.
-  - **Kiosk Terminal Management:** Real-time campus kiosk terminal registry (`code`, `name`, `location`, bound printer, and QR URL).
+  - **Kiosk Terminal Management:** Real-time campus kiosk terminal registry with direct "Launch Display" shortcut.
   - **Platform Settings Management:** Configurable upload caps, page ceilings, retention duration, and maintenance locks.
   - **Live Pricing Rate Editor:** Real-time B&W and Color per-page price updates with database persistence.
   - **Job Audit & Lifecycle Management:** Real-time multi-filter and search across all campus jobs with error inspection.
@@ -56,9 +56,17 @@ PrintX is an open-source, production-grade smart self-service document printing 
 - **Outbound Agent Cloud Streaming:** `windows-agent/app/job_receiver.py` transparently downloads remote cloud documents to a local disk cache before invoking SumatraPDF.
 - **Production Cloud Deployment Guide:** Comprehensive operations guide in `docs/CLOUD_DEPLOYMENT.md` detailing NSSM service configuration, Task Scheduler fallback, S3 lifecycle retention rules, and hardware troubleshooting.
 
+### G. Acceptance Testing, Kiosk Standby Screen & Operational Tooling (Phase 9 Completed)
+- **Official Immutable Digital Receipt Endpoint:** `GET /api/v1/jobs/{id}/receipt` in [`backend/app/api/routes/jobs.py`](file:///C:/Users/sampa/Desktop/PrintX/backend/app/api/routes/jobs.py) returning complete financial and audit records.
+- **Section 14 End-to-End Acceptance Test:** [`backend/tests/test_e2e_acceptance.py`](file:///C:/Users/sampa/Desktop/PrintX/backend/tests/test_e2e_acceptance.py) validating all 14 criteria: user upload, page counting, pricing validation, payment verification, agent pull authorization, spooler transitions, immutable receipt, duplicate print rejection, and refund prevention.
+- **Dynamic Kiosk QR Code Streaming:** `GET /api/v1/kiosks/{id}/qr.png` generating high-contrast PNG QR codes on-the-fly for any campus terminal.
+- **Kiosk Standby / Attract Mode Screen:** Dedicated route `/kiosk/:code` via [`frontend/src/pages/KioskDisplay.tsx`](file:///C:/Users/sampa/Desktop/PrintX/frontend/src/pages/KioskDisplay.tsx) featuring full-screen kiosk layout, animated QR code scanner target, live HP Smart Tank 585 hardware telemetry, real-time clock, pricing badges, and 3-step illustrated walkthrough.
+- **Printable A4 Signage Poster Generator:** [`scripts/generate-kiosk-poster.py`](file:///C:/Users/sampa/Desktop/PrintX/scripts/generate-kiosk-poster.py) generating high-res A4 PDF posters (`kiosk_poster_KIOSK-01.pdf`) ready to print on the HP Smart Tank 585 and display at physical kiosks.
+- **Complete Environment Verifier:** [`scripts/system-diagnostic.ps1`](file:///C:/Users/sampa/Desktop/PrintX/scripts/system-diagnostic.ps1) reporting 11/11 Passed checks across OS, Python, pywin32, spooler service, HP printer discovery, SumatraPDF, SQLite WAL mode, and Node.js.
+
 ---
 
-## 3. Automated Test Verification (67 Total Tests Passing)
+## 3. Automated Test Verification (68 Total Tests Passing)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
@@ -70,16 +78,22 @@ PrintX is an open-source, production-grade smart self-service document printing 
 | Payment Gateway & Webhooks | `backend/tests/test_payments.py` | 9 | **9 PASSED** | 1.49s |
 | Pricing Rules Engine | `backend/tests/test_pricing.py` | 4 | **4 PASSED** | 0.2s |
 | Admin Operations & Agent Fleet | `backend/tests/test_admin.py` | 7 | **7 PASSED** | 0.5s |
-| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.39s |
-| Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.7s |
-| **Total** | | **67** | **67 PASSED (0 failures)** | |
+| End-to-End Acceptance Suite | `backend/tests/test_e2e_acceptance.py` | 1 | **1 PASSED** | 0.46s |
+| Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.28s |
+| Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.11s |
+| **Total Automated Suite** | | **68** | **68 PASSED (0 failures)** | |
 
 ---
 
-## 4. Master Launch & Verification Scripts
+## 4. Master Launch & Operational Scripts
 - **Master Launch Script:** `.\run.ps1` at repository root starts backend, frontend, and windows agent in coordinated PowerShell consoles.
+- **System Health & Diagnostic Script:** `.\scripts\system-diagnostic.ps1` runs complete environment verification.
+- **Kiosk Signage Generator:** `python .\scripts\generate-kiosk-poster.py` generates printable A4 signage.
 - **Full Setup Script:** `.\scripts\setup-all.ps1` initializes Python virtual environments, pip dependencies, npm packages, and database seeding.
 - **Individual Launch Scripts:**
   - `backend/run-backend.ps1` (FastAPI on port 8000)
   - `frontend/run-frontend.ps1` (Vite on port 5173)
   - `windows-agent/run-agent.ps1` (Autonomous Spooler worker)
+  - Kiosk Standby Screen: [http://localhost:5173/kiosk/KIOSK-01](http://localhost:5173/kiosk/KIOSK-01)
+  - Student Printing Portal: [http://localhost:5173/print?device=KIOSK-01](http://localhost:5173/print?device=KIOSK-01)
+  - Admin Dashboard: [http://localhost:5173/admin](http://localhost:5173/admin)

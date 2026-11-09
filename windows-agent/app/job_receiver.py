@@ -124,6 +124,9 @@ class JobReceiver:
             idempotency_key=raw_job.get("idempotency_key", job_id)
         )
 
+        # Notify server that job is dispatched and actively being processed
+        self.update_job_status(job_id, "DISPATCHED", message="Dispatched to local Windows Print Controller")
+
         # Execute Print
         success, message = print_executor.execute_print_job(submission)
         if not success:

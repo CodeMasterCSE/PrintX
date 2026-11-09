@@ -90,3 +90,18 @@ class JobStatusUpdate(BaseModel):
     error_message: Optional[str] = None
     message: Optional[str] = None
 
+
+class JobReceiptResponse(BaseModel):
+    job_id: str
+    job_number: str
+    transaction_reference: Optional[str] = None
+    document_name: str
+    pages_count: int
+    copies: int
+    printing_mode: str
+    total_price: float
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+

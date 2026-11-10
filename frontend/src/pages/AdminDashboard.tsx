@@ -194,8 +194,8 @@ export const AdminDashboard: React.FC = () => {
         port_name: item.port_name,
         location: newPrinterLocation || 'Campus Kiosk',
         supports_color: item.supports_color ?? true,
-        supports_duplex: false, // Strict: HP Smart Tank 585 simplex only
-        is_default: false,
+        supports_duplex: item.supports_duplex ?? false,
+        is_default: printerList.length === 0,
       });
       queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
       queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
@@ -247,7 +247,7 @@ export const AdminDashboard: React.FC = () => {
             Kiosk System Administration
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Real-time Windows Spooler telemetry, HP Smart Tank queues, and platform settings.
+            Real-time Windows Spooler telemetry, hardware printer queues, and platform settings.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -371,34 +371,51 @@ export const AdminDashboard: React.FC = () => {
                 <span className="text-xs font-mono text-slate-400">pywin32 Spooler Integration</span>
               </div>
               <div className="space-y-3">
-                {printerList.map((p: any) => (
-                  <div key={p.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
-                        <Printer className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-sm text-slate-900">{p.name}</h4>
-                          {p.is_default && (
-                            <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold">DEFAULT</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">
-                          Driver: {p.driver_name || 'Generic'} | Port: {p.port_name || 'USB'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase ${
-                        p.is_online ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {p.status}
-                      </span>
-                      <p className="text-[11px] text-slate-400 font-mono mt-1">Queue Depth: {p.queue_length} job(s)</p>
-                    </div>
+                {printerList.length === 0 ? (
+                  <div className="py-8 px-4 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                    <Printer className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-slate-700">No hardware printers connected</p>
+                    <p className="text-xs text-slate-400 mt-1 mb-4">
+                      Connect and discover any physical Wi-Fi or USB printer.
+                    </p>
+                    <button
+                      onClick={handleDiscoverPrinters}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      Discover Printers
+                    </button>
                   </div>
-                ))}
+                ) : (
+                  printerList.map((p: any) => (
+                    <div key={p.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                          <Printer className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-slate-900">{p.name}</h4>
+                            {p.is_default && (
+                              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold">DEFAULT</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">
+                            Driver: {p.driver_name || 'Generic'} | Port: {p.port_name || 'USB'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase ${
+                          p.is_online ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {p.status}
+                        </span>
+                        <p className="text-[11px] text-slate-400 font-mono mt-1">Queue Depth: {p.queue_length} job(s)</p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -480,93 +497,112 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-3">Printer Name</th>
-                  <th className="px-6 py-3">Driver</th>
-                  <th className="px-6 py-3">Port</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Queue Length</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {printerList.map((p: any) => (
-                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{p.name}</span>
-                        {p.is_default && (
-                          <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold">DEFAULT</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.driver_name}</td>
-                    <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.port_name}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                        p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                          : p.is_online
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {p.status === 'out_of_paper' ? 'Out of Paper' : p.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-slate-900">{p.queue_length} job(s)</td>
-                    <td className="px-6 py-4 text-right space-x-2">
-                      {p.status === 'out_of_paper' ? (
-                        <button
-                          onClick={() => handleUpdatePrinterStatus(p.id, 'online', true)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors"
-                          title="Simulate paper refill"
-                        >
-                          Clear Paper Out
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleUpdatePrinterStatus(p.id, 'out_of_paper', true)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
-                          title="Simulate paper empty to test interlock"
-                        >
-                          Simulate Paper Out
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleTogglePrinter(p.id, p.is_online)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
-                          p.is_online ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                        }`}
-                      >
-                        <Power className="w-3.5 h-3.5" />
-                        {p.is_online ? 'Set Maintenance' : 'Set Ready'}
-                      </button>
-                      {!p.is_default && (
-                        <button
-                          onClick={() => handleSetDefaultPrinter(p.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
-                        >
-                          <Star className="w-3.5 h-3.5 text-amber-500" />
-                          Set Default
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeletePrinter(p)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-colors"
-                        title="Remove device from PrintX"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Remove
-                      </button>
-                    </td>
+          {printerList.length === 0 ? (
+            <div className="py-16 px-6 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+              <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-4">
+                <Printer className="w-7 h-7" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">No Printers Connected</h3>
+              <p className="text-sm text-slate-500 max-w-md mx-auto mb-6 leading-relaxed">
+                PrintX starts with zero pre-seeded demo devices. Any printer installed on this Windows 11 machine can be discovered and connected dynamically via Wi-Fi or USB.
+              </p>
+              <button
+                onClick={handleDiscoverPrinters}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-sm transition-colors"
+              >
+                <Search className="w-4 h-4" />
+                Discover Printers (Wi-Fi & USB)
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3">Printer Name</th>
+                    <th className="px-6 py-3">Driver</th>
+                    <th className="px-6 py-3">Port</th>
+                    <th className="px-6 py-3">Status</th>
+                    <th className="px-6 py-3">Queue Length</th>
+                    <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {printerList.map((p: any) => (
+                    <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{p.name}</span>
+                          {p.is_default && (
+                            <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold">DEFAULT</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.driver_name}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.port_name}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                          p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : p.is_online
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {p.status === 'out_of_paper' ? 'Out of Paper' : p.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-xs text-slate-900">{p.queue_length} job(s)</td>
+                      <td className="px-6 py-4 text-right space-x-2">
+                        {p.status === 'out_of_paper' ? (
+                          <button
+                            onClick={() => handleUpdatePrinterStatus(p.id, 'online', true)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors"
+                            title="Simulate paper refill"
+                          >
+                            Clear Paper Out
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUpdatePrinterStatus(p.id, 'out_of_paper', true)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
+                            title="Simulate paper empty to test interlock"
+                          >
+                            Simulate Paper Out
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleTogglePrinter(p.id, p.is_online)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                            p.is_online ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                          }`}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                          {p.is_online ? 'Set Maintenance' : 'Set Ready'}
+                        </button>
+                        {!p.is_default && (
+                          <button
+                            onClick={() => handleSetDefaultPrinter(p.id)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                          >
+                            <Star className="w-3.5 h-3.5 text-amber-500" />
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeletePrinter(p)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-colors"
+                          title="Remove device from PrintX"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -948,6 +984,14 @@ export const AdminDashboard: React.FC = () => {
                               <p className="text-xs text-slate-500 font-mono mt-1">
                                 Driver: {p.driver_name} | Port: {p.port_name}
                               </p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                  {p.supports_color ? 'Color & B&W' : 'B&W Only'}
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                  {p.supports_duplex ? 'Auto Duplex' : 'Single-Sided'}
+                                </span>
+                              </div>
                               {isVirtual && (
                                 <p className="text-[11px] text-amber-600 mt-1 font-medium">
                                   Virtual/Software device (Not recommended for physical kiosk kiosks)

@@ -81,8 +81,11 @@ class PrintExecutor:
         if submission.page_range and submission.page_range.lower() != "all":
             settings_parts.append(submission.page_range.replace(" ", ""))
 
-        # 5. Duplex policy: STRICT SIMPLEX (single-sided) for HP Smart Tank 585
-        settings_parts.append("simplex")
+        # 5. Duplex policy: respect submission duplex setting
+        if submission.duplex:
+            settings_parts.append("duplex")
+        else:
+            settings_parts.append("simplex")
         settings_parts.append("paper=A4")
 
         settings_str = ",".join(settings_parts)

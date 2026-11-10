@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: Union[str, None] = None
     SERVER_PUBLIC_URL: str = "http://127.0.0.1:8000"
 
-    # Printer & Agent Defaults
-    DEFAULT_PRINTER_NAME: str = "HP Smart Tank 580-590 series"
-    FALLBACK_PRINTER_NAME: str = "Microsoft Print to PDF"
+    # Printer & Agent Defaults (dynamically populated via Admin discovery)
+    DEFAULT_PRINTER_NAME: str = ""
+    FALLBACK_PRINTER_NAME: str = ""
     AGENT_SECRET_KEY: str = "printx-agent-local-secret-key"
 
     # CORS

@@ -33,21 +33,12 @@ def receive_printer_heartbeat(payload: HeartbeatRequest, db: Session = Depends(g
     """Receives live queue telemetry and health status from Windows Print Agent."""
     printer = db.query(Printer).filter(Printer.name == payload.printer_name).first()
     if not printer:
-        # Register on first discovery if absent
-        printer = Printer(
-            name=payload.printer_name,
-            driver_name=payload.printer_name,
-            is_online=payload.is_online,
-            status=payload.printer_status,
-            queue_length=payload.queue_length,
-            last_heartbeat=datetime.now(timezone.utc)
-        )
-        db.add(printer)
-    else:
-        printer.status = payload.printer_status
-        printer.queue_length = payload.queue_length
-        printer.is_online = payload.is_online
-        printer.last_heartbeat = datetime.now(timezone.utc)
+        return {"status": "unregistered", "printer": payload.printer_name, "message": "Printer not yet added by Admin."}
+
+    printer.status = payload.printer_status
+    printer.queue_length = payload.queue_length
+    printer.is_online = payload.is_online
+    printer.last_heartbeat = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(printer)

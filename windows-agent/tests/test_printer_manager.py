@@ -12,6 +12,7 @@ def test_resolve_exact_hp_smart_tank():
             port_name="nul:",
             is_default=False,
             is_online=True,
+            is_virtual=True,
             status="online"
         ),
         AgentPrinterInfo(
@@ -20,6 +21,7 @@ def test_resolve_exact_hp_smart_tank():
             port_name="USB001",
             is_default=True,
             is_online=True,
+            is_virtual=False,
             status="online"
         )
     ]
@@ -38,8 +40,9 @@ def test_resolve_fallback_pdf_printer_when_hp_not_found():
             name="Microsoft Print to PDF",
             driver_name="Microsoft Print to PDF",
             port_name="PORTPROMPT:",
-            is_default=False,
+            is_default=True,
             is_online=True,
+            is_virtual=True,
             status="online"
         )
     ]

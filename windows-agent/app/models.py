@@ -8,6 +8,7 @@ class AgentPrinterInfo(BaseModel):
     port_name: Optional[str] = None
     is_default: bool = False
     is_online: bool = True
+    is_virtual: bool = False
     status: str = "online"
     status_details: Optional[str] = None
     queue_length: int = 0

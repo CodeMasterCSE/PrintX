@@ -128,6 +128,12 @@ export const KioskDisplay: React.FC = () => {
           <span>ATTENTION: Printer Paper Tray Empty — Please reload A4 paper tray to resume printing.</span>
         </div>
       )}
+      {!activePrinter && (
+        <div className="bg-amber-600/90 text-white px-8 py-3.5 flex items-center justify-center gap-3 font-semibold text-sm shadow-lg border-b border-amber-500/50">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>TERMINAL STANDBY: No physical printer is currently connected. Administrators can connect a printer in the Admin Portal.</span>
+        </div>
+      )}
       {isOffline && !isPaperOut && (
         <div className="bg-rose-600/95 text-white px-8 py-3.5 flex items-center justify-center gap-3 font-semibold text-sm shadow-lg border-b border-rose-500/50">
           <AlertCircle className="w-5 h-5 shrink-0" />
@@ -172,17 +178,19 @@ export const KioskDisplay: React.FC = () => {
             </div>
             <div className="text-left">
               <div className="text-xs font-semibold text-slate-200">
-                {activePrinter?.name || 'HP Smart Tank 585'}
+                {activePrinter?.name || 'No Printer Connected'}
               </div>
               <div className="text-[11px] text-slate-400">
-                {isPaperOut ? (
+                {!activePrinter ? (
+                  <span className="text-amber-400 font-semibold">Not Connected</span>
+                ) : isPaperOut ? (
                   <span className="text-amber-300 font-bold">Paper Tray Empty</span>
                 ) : isOffline ? (
                   <span className="text-rose-400 font-bold">Offline</span>
                 ) : (
                   'Ready to Print'
                 )}
-                {activePrinter?.queue_length ? ` • ${activePrinter.queue_length} in queue` : ' • Queue Empty'}
+                {activePrinter?.queue_length ? ` • ${activePrinter.queue_length} in queue` : activePrinter ? ' • Queue Empty' : ''}
               </div>
             </div>
           </div>
@@ -274,7 +282,7 @@ export const KioskDisplay: React.FC = () => {
               Self-Service Printing Made Completely Touchless.
             </h1>
             <p className="text-slate-400 mt-2 text-base max-w-xl">
-              From PDF on your phone to paper in the tray in under 60 seconds. Powered by the HP Smart Tank 585 series.
+              From PDF on your phone to paper in the tray in under 60 seconds. Powered by campus high-speed self-service printing.
             </p>
           </div>
 
@@ -334,7 +342,7 @@ export const KioskDisplay: React.FC = () => {
             <div className="flex items-center gap-3">
               <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0" />
               <span>
-                <strong>Hardware Protected:</strong> Single-sided simplex printing enforced for mechanical jam prevention on HP Smart Tank 585.
+                <strong>Hardware Telemetry:</strong> Real-time Windows Spooler and hardware paper monitoring directly integrated.
               </span>
             </div>
             <Link

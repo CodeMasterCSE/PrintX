@@ -90,7 +90,12 @@ class JobReceiver:
             logger.error(f"SECURITY ALERT: Dropping job {job_number} because status '{status}' is NOT paid/authorized!")
             return False
 
-        printer_info = printer_manager.resolve_target_printer()
+        requested_printer = (
+            raw_job.get("printer", {}).get("name")
+            if isinstance(raw_job.get("printer"), dict)
+            else raw_job.get("printer_name")
+        )
+        printer_info = printer_manager.resolve_target_printer(requested_printer)
         if not printer_info:
             logger.error("No Windows printer available to process job.")
             self.update_job_status(job_id, "FAILED", error_message="Printer offline or not detected.")
@@ -120,7 +125,7 @@ class JobReceiver:
             color_mode=cfg.get("color_mode", "grayscale"),
             page_range=cfg.get("page_range", "all"),
             fit_to_page=cfg.get("fit_to_page", True),
-            duplex=False,  # Enforce single-sided for HP Smart Tank 585
+            duplex=bool(cfg.get("duplex", False)),
             idempotency_key=raw_job.get("idempotency_key", job_id)
         )
 

@@ -77,6 +77,14 @@ class JobService:
         
         if not printer:
             printer = db.query(Printer).filter(Printer.is_default == True).first()
+            if not printer:
+                printer = db.query(Printer).first()
+
+        if not printer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No printer is currently connected to the system. An administrator must discover and connect a printer in the Admin Dashboard before printing."
+            )
 
         # 4. Calculate authoritative price
         pricing_rule = db.query(PricingRule).filter(PricingRule.is_active == True).first()
@@ -90,14 +98,15 @@ class JobService:
         total_impressions = selected_pages * req.configuration.copies
         calc_price = max((total_impressions * rate) + base_fee, min_amount)
 
-        # 5. Persist PrintConfiguration
+        # 5. Persist PrintConfiguration (duplex honored if target printer supports it)
+        is_duplex_enabled = bool(req.configuration.duplex and printer.supports_duplex)
         config = PrintConfiguration(
             paper_size=PaperSize.A4,
             color_mode=ColorMode.COLOR if req.configuration.color_mode == "color" else ColorMode.GRAYSCALE,
             copies=req.configuration.copies,
             page_range=req.configuration.page_range,
             fit_to_page=req.configuration.fit_to_page,
-            duplex=False  # HP Smart Tank 585 single-sided
+            duplex=is_duplex_enabled
         )
         db.add(config)
         db.flush()
@@ -261,7 +270,7 @@ class JobService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "DUPLICATE PRINT SAFEGUARD: This job was previously submitted to the Windows Spooler. "
-                    "Retrying blindly could produce duplicate physical prints on the HP Smart Tank 585. "
+                    "Retrying blindly could produce duplicate physical prints on the hardware printer. "
                     "Verify the printer output tray and supply force_retry=true with operator confirmation."
                 )
             )

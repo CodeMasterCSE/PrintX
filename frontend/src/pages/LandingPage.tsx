@@ -56,7 +56,7 @@ export const LandingPage: React.FC = () => {
           <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 font-medium">
             <div className="flex items-center gap-1.5">
               <Printer className="w-4 h-4 text-brand-600" />
-              <span>Target: HP Smart Tank 585</span>
+              <span>Supports Any Wi-Fi & USB Printer</span>
             </div>
             <div className="flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -122,7 +122,7 @@ export const LandingPage: React.FC = () => {
               </div>
               <h4 className="text-lg font-semibold text-slate-900 mb-2">Collect & Track</h4>
               <p className="text-sm text-slate-600 leading-relaxed">
-                The native Windows print agent submits your job to the HP Smart Tank 585 spooler and provides a verifiable receipt.
+                The native Windows print agent submits your job to the connected Windows spooler queue and provides a verifiable receipt.
               </p>
             </div>
           </div>
@@ -224,7 +224,7 @@ export const LandingPage: React.FC = () => {
                 Is double-sided (duplex) printing available?
               </h4>
               <p className="text-sm text-slate-600 leading-relaxed">
-                The current campus kiosk printer (HP Smart Tank 585) is physically configured for reliable single-sided A4 printing. Duplex options are disabled in the interface to prevent paper jamming.
+                Duplex is automatically supported if the connected kiosk printer has hardware duplexing capabilities. For simplex printers, single-sided printing is safely enforced.
               </p>
             </div>
 

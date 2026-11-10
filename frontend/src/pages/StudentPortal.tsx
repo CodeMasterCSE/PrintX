@@ -78,7 +78,7 @@ export const StudentPortal: React.FC = () => {
     copies: 1,
     page_range: 'all',
     fit_to_page: true,
-    duplex: false, // HP Smart Tank 585 is single-sided
+    duplex: false,
   });
 
   // Step 3: Pricing breakdown
@@ -104,9 +104,10 @@ export const StudentPortal: React.FC = () => {
     refetchInterval: 5000,
   });
 
-  const targetPrinter = printers?.find((p: any) => p.name?.includes('Smart Tank') || p.is_default) || printers?.[0];
+  const targetPrinter = printers?.find((p: any) => p.is_default) || printers?.[0];
   const isPaperOut = targetPrinter?.status === 'out_of_paper' || targetPrinter?.status === 'PAPER_OUT';
   const isPrinterOffline = targetPrinter?.is_online === false || targetPrinter?.status === 'offline';
+  const isNoPrinter = !targetPrinter && Array.isArray(printers) && printers.length === 0;
 
   // Re-estimate price whenever document or config changes
   useEffect(() => {
@@ -319,6 +320,17 @@ export const StudentPortal: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {/* Alert when no physical printer is connected in PrintX */}
+      {isNoPrinter && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+          <div>
+            <span className="font-bold">No Printer Connected: </span>
+            This kiosk terminal does not currently have an active physical printer connected. Please discover and add a printer from the Admin portal.
+          </div>
+        </div>
+      )}
+
       {/* Kiosk Location Banner */}
       <div className="mb-8 p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -334,11 +346,15 @@ export const StudentPortal: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <div className="px-3 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
-            {kiosk?.printer_name || 'HP Smart Tank 585'}
+            {targetPrinter?.name || kiosk?.printer_name || 'No Printer Connected'}
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Spooler Ready
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+            targetPrinter?.is_online
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${targetPrinter?.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            {targetPrinter?.is_online ? 'Spooler Ready' : 'Standby / Unconnected'}
           </div>
         </div>
       </div>
@@ -630,7 +646,7 @@ export const StudentPortal: React.FC = () => {
               <div>
                 <h3 className="text-2xl font-bold text-slate-900">Configure Print Preferences</h3>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Target Printer: <span className="font-semibold text-slate-700">HP Smart Tank 585</span>
+                  Target Printer: <span className="font-semibold text-slate-700">{targetPrinter?.name || 'Campus Kiosk Printer'}</span>
                 </p>
               </div>
               <div className="text-right">
@@ -754,16 +770,31 @@ export const StudentPortal: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Hardware Constraints: Single-Sided Badge */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                    <Info className="w-4 h-4 text-brand-600" />
-                    Hardware Notice: Single-Sided Printing Only
+                {/* Duplex / Single-Sided Configuration based on hardware capability */}
+                {targetPrinter?.supports_duplex ? (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 uppercase">Double-Sided (Duplex) Printing</label>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Print on both sides of each sheet (reduces paper usage)</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={config.duplex}
+                      onChange={(e) => setConfig({ ...config, duplex: e.target.checked })}
+                      className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
+                    />
                   </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    The HP Smart Tank 585 does not support automatic duplex. Documents are printed single-sided to guarantee smooth paper feeding.
-                  </p>
-                </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                      <Info className="w-4 h-4 text-brand-600" />
+                      Hardware Notice: Single-Sided Simplex
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      The connected printer ({targetPrinter?.name || 'Standard Kiosk'}) is configured for single-sided simplex printing to guarantee smooth paper feeding.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Right Column: Live Price Breakdown Card */}
@@ -904,7 +935,7 @@ export const StudentPortal: React.FC = () => {
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                 <span className="text-sm text-slate-500">Target Printer</span>
-                <span className="font-bold text-slate-900 text-sm">HP Smart Tank 585 (A4 Single-Sided)</span>
+                <span className="font-bold text-slate-900 text-sm">{targetPrinter?.name || 'Campus Printer'} ({config.duplex ? 'A4 Double-Sided' : 'A4 Single-Sided'})</span>
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                 <span className="text-sm text-slate-500">Color Mode</span>
@@ -1120,7 +1151,7 @@ export const StudentPortal: React.FC = () => {
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">Submitted to Windows Spooler</h4>
                   <p className="text-xs text-slate-500">
-                    SumatraPDF CLI transferred document to queue: HP Smart Tank 580-590 series.
+                    Document binary transferred to print queue: {targetPrinter?.name || 'Windows Hardware Queue'}.
                   </p>
                 </div>
               </div>
@@ -1172,7 +1203,7 @@ export const StudentPortal: React.FC = () => {
                       {job.error_message || 'The printer reported an error or spooler timeout.'}
                     </p>
                     <p className="text-xs text-red-600 mt-2 font-medium">
-                      Duplicate Protection: Please verify whether paper exited the HP Smart Tank 585 tray before retrying.
+                      Duplicate Protection: Please verify whether paper exited the printer tray before retrying.
                     </p>
                     <button
                       onClick={async () => {

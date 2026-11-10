@@ -34,7 +34,7 @@ def test_full_system_acceptance_criteria_workflow(client, db_session):
     """
 
     # --- STEP 1: Verify Hardware Printer & Baseline Seeding ---
-    hp_printer = db_session.query(Printer).filter(Printer.name == "HP Smart Tank 580-590 series").first()
+    hp_printer = db_session.query(Printer).first()
     assert hp_printer is not None
     assert hp_printer.is_online is True
 

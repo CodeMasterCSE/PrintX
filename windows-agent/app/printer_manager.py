@@ -93,12 +93,14 @@ class PrinterManager:
                     status_text = "offline"
                     is_online = False
 
+                is_virt = any(v in printer_name.lower() or v in driver_name.lower() for v in ["pdf", "onenote", "xps", "fax"])
                 info = AgentPrinterInfo(
                     name=printer_name,
                     driver_name=driver_name,
                     port_name=port_name,
                     is_default=(printer_name == default_printer),
                     is_online=is_online,
+                    is_virtual=is_virt,
                     status=status_text,
                     status_details=status_details,
                     queue_length=c_jobs
@@ -115,35 +117,51 @@ class PrinterManager:
 
         return printers_info
 
-    def resolve_target_printer(self) -> Optional[AgentPrinterInfo]:
+    def resolve_target_printer(self, requested_name: Optional[str] = None) -> Optional[AgentPrinterInfo]:
         """
-        Discovers the physical HP Smart Tank 585 queue or falls back to Microsoft Print to PDF.
-        Never sends duplicate jobs across both USB and Wi-Fi queues.
+        Discovers and resolves the target printer queue for any connected physical printer.
+        Prioritizes the exact printer requested by the print job or server configuration.
         """
         installed = self.get_installed_printers()
         installed_names = {p.name: p for p in installed}
 
-        # 1. Exact match for target printer
-        if self.target_name in installed_names:
-            logger.info(f"Resolved primary physical printer queue: '{self.target_name}'")
+        # 1. Exact match for requested printer name from job
+        if requested_name and requested_name in installed_names:
+            logger.info(f"Resolved job requested printer queue: '{requested_name}'")
+            return installed_names[requested_name]
+
+        # 2. Case-insensitive or substring match for requested name
+        if requested_name:
+            for name, p in installed_names.items():
+                if requested_name.lower() in name.lower() or name.lower() in requested_name.lower():
+                    logger.info(f"Resolved printer queue via match: '{name}' (requested: '{requested_name}')")
+                    return p
+
+        # 3. Explicit TARGET_PRINTER_NAME from config if set
+        if self.target_name and self.target_name in installed_names:
+            logger.info(f"Resolved configured target printer queue: '{self.target_name}'")
             return installed_names[self.target_name]
 
-        # 2. Substring search for HP Smart Tank series (handles variation e.g. HP5756E5)
-        for name, p in installed_names.items():
-            if "HP Smart Tank" in name or "Smart Tank 58" in name:
-                logger.info(f"Discovered matching HP Smart Tank queue: '{name}'")
+        # 4. Default Windows printer if physical
+        for p in installed:
+            if p.is_default and not p.is_virtual:
+                logger.info(f"Using default system physical printer queue: '{p.name}'")
                 return p
 
-        # 3. Fallback to Microsoft Print to PDF for zero-waste local development
-        if self.fallback_name in installed_names:
-            logger.info(f"Target HP printer not detected. Using fallback virtual queue: '{self.fallback_name}'")
-            return installed_names[self.fallback_name]
+        # 5. Any installed physical printer (USB, Network/Wi-Fi)
+        for p in installed:
+            if not p.is_virtual:
+                logger.info(f"Using available physical printer queue: '{p.name}'")
+                return p
 
-        # 4. Default to system default printer if available
+        # 6. Any installed printer (including virtual/default)
         for p in installed:
             if p.is_default:
                 logger.warning(f"Using default system printer queue: '{p.name}'")
                 return p
+
+        if installed:
+            return installed[0]
 
         return None
 

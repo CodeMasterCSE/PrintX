@@ -12,9 +12,9 @@ describe('PrintX Frontend Configuration & Foundation', () => {
     expect(rateColor).toBeGreaterThan(rateBw);
   });
 
-  it('enforces single-sided printing restriction for HP Smart Tank 585', () => {
+  it('enforces single-sided printing restriction for simplex hardware', () => {
     const hardwareConfig = {
-      model: 'HP Smart Tank 585',
+      model: 'Simplex Kiosk Printer',
       supportsDuplex: false,
       paperSize: 'A4',
     };

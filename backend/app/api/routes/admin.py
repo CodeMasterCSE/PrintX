@@ -55,7 +55,7 @@ DEFAULT_SETTINGS = [
     ("MAX_UPLOAD_SIZE_MB", "50", "Maximum permissible PDF upload size in megabytes"),
     ("MAX_PAGE_COUNT", "200", "Maximum permissible pages per single print document"),
     ("DOCUMENT_RETENTION_DAYS", "7", "Storage retention threshold for completed print documents"),
-    ("DEFAULT_PRINTER", "HP Smart Tank 580-590 series", "Primary Windows spooler print queue"),
+    ("DEFAULT_PRINTER", "", "Primary Windows spooler print queue"),
     ("MAINTENANCE_MODE", "false", "Kiosk temporary maintenance lock"),
 ]
 
@@ -303,11 +303,20 @@ def discover_system_printers(db: Session = Depends(get_db)):
         handle = None
         driver_name = p_name
         port_name = "Local"
+        supports_col = True
+        supports_dup = False
         try:
             handle = win32print.OpenPrinter(p_name)
             details = win32print.GetPrinter(handle, 2)
             driver_name = details.get("pDriverName", p_name)
             port_name = details.get("pPortName", "Local")
+            dm = details.get("pDevMode")
+            if dm:
+                try:
+                    supports_col = (getattr(dm, "Color", 2) == 2)
+                    supports_dup = (getattr(dm, "Duplex", 1) in (2, 3))
+                except Exception:
+                    pass
         except Exception:
             pass
         finally:
@@ -342,8 +351,8 @@ def discover_system_printers(db: Session = Depends(get_db)):
             is_already_added=existing is not None,
             existing_printer_id=existing.id if existing else None,
             status="online",
-            supports_color=True,
-            supports_duplex=False
+            supports_color=supports_col,
+            supports_duplex=supports_dup
         ))
 
     # Sort so physical devices (Wi-Fi and USB) appear first, and virtual/demo drivers at the bottom
@@ -383,6 +392,10 @@ def add_printer(req: AdminPrinterCreateRequest, db: Session = Depends(get_db)):
     db.add(new_printer)
     db.commit()
     db.refresh(new_printer)
+
+    # Bind any kiosks lacking a default printer to this newly registered printer
+    db.query(Kiosk).filter(Kiosk.default_printer_id == None).update({Kiosk.default_printer_id: new_printer.id})
+    db.commit()
 
     try:
         from app.core.events import event_broadcaster

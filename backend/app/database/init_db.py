@@ -41,36 +41,17 @@ def init_db(db: Session) -> None:
         )
         db.add(student)
 
-    # 3. Seed Target HP Smart Tank 585 Printer
-    printer = db.query(Printer).filter(Printer.name == "HP Smart Tank 580-590 series").first()
-    if not printer:
-        logger.info("Seeding default target printer: HP Smart Tank 580-590 series")
-        printer = Printer(
-            name="HP Smart Tank 580-590 series",
-            driver_name="HP Smart Tank 580-590 series",
-            port_name="USB001",
-            location="Ground Floor Kiosk #1",
-            is_online=True,
-            is_default=True,
-            supports_color=True,
-            supports_duplex=False,  # Target printer HP Smart Tank 585 is single-sided only
-            status=PrinterStatus.ONLINE.value,
-            status_details="Ready for incoming print jobs",
-            queue_length=0
-        )
-        db.add(printer)
-        db.flush()
-
-    # 4. Seed Kiosk KIOSK-01
+    # 3. Kiosk KIOSK-01 (Printers are discovered and connected dynamically by Admin)
     kiosk = db.query(Kiosk).filter(Kiosk.code == "KIOSK-01").first()
     if not kiosk:
         logger.info("Seeding default kiosk: KIOSK-01")
+        default_printer = db.query(Printer).filter(Printer.is_default == True).first()
         kiosk = Kiosk(
             code="KIOSK-01",
             name="Central Library Self-Service Hub",
             location="Central Library, Ground Floor East",
             is_active=True,
-            default_printer_id=printer.id if printer else None,
+            default_printer_id=default_printer.id if default_printer else None,
             qr_code_data="http://localhost:5173/print?device=KIOSK-01"
         )
         db.add(kiosk)

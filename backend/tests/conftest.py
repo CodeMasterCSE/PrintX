@@ -9,6 +9,8 @@ from app.core.config import settings
 settings.ENVIRONMENT = "testing"
 from app.main import app
 from app.database.init_db import init_db
+from app.models.printer import Printer
+from app.models.kiosk import Kiosk
 
 # Use an in-memory SQLite database with StaticPool for test isolation
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -27,6 +29,26 @@ def db_session():
     Base.metadata.create_all(bind=engine)
     session = TestingSessionLocal()
     init_db(session)
+    # Seed a generic test printer for test harness execution
+    test_printer = Printer(
+        name="Test Hardware Queue",
+        driver_name="Test Generic Driver",
+        port_name="USB001",
+        location="Lab Kiosk",
+        is_online=True,
+        is_default=True,
+        supports_color=True,
+        supports_duplex=False,
+        status="READY",
+        queue_length=0
+    )
+    session.add(test_printer)
+    session.commit()
+    kiosk = session.query(Kiosk).first()
+    if kiosk:
+        kiosk.default_printer_id = test_printer.id
+        session.commit()
+
     try:
         yield session
     finally:

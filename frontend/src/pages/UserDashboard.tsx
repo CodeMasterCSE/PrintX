@@ -36,7 +36,7 @@ export const UserDashboard: React.FC = () => {
   const totalSpent = completedJobs.reduce((acc, j) => acc + j.price, 0);
 
   const handleRetryJob = async (job: PrintJob) => {
-    if (!confirm(`Are you sure you want to retry job ${job.job_number}?\n\nDuplicate Protection Warning: Verify the HP Smart Tank 585 tray to ensure paper did not already print.`)) {
+    if (!confirm(`Are you sure you want to retry job ${job.job_number}?\n\nDuplicate Protection Warning: Verify the printer output tray to ensure paper did not already print.`)) {
       return;
     }
     setRetryingJobId(job.id);

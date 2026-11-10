@@ -14,10 +14,9 @@ class AgentSettings(BaseSettings):
     AGENT_ID: str = "AGENT-WIN11-01"
     AGENT_SECRET: str = "printx-agent-local-secret-key"
 
-    # Target Windows Printer Queue Name
-    # Default matches the installed HP Smart Tank on this Windows 11 machine
-    TARGET_PRINTER_NAME: str = "HP Smart Tank 580-590 series"
-    FALLBACK_PRINTER_NAME: str = "Microsoft Print to PDF"
+    # Target Windows Printer Queue Name (empty by default to dynamically resolve any connected printer)
+    TARGET_PRINTER_NAME: str = ""
+    FALLBACK_PRINTER_NAME: str = ""
 
     # Headless PDF CLI Printer
     SUMATRAPDF_PATH: str = "./bin/SumatraPDF.exe"

@@ -331,6 +331,22 @@ export const StudentPortal: React.FC = () => {
         </div>
       )}
 
+      {/* Alert when physical printer is OFFLINE */}
+      {isPrinterOffline && !isNoPrinter && (
+        <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+            <div>
+              <span className="font-bold text-red-950">Printer OFFLINE: </span>
+              The physical printer ({targetPrinter?.name || 'Kiosk Printer'}) is currently offline or unreachable. Please verify power and Wi-Fi/USB connection. Payments and printing are paused.
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold uppercase tracking-wider text-[10px] border border-red-200 shrink-0">
+            OFFLINE
+          </span>
+        </div>
+      )}
+
       {/* Kiosk Location Banner */}
       <div className="mb-8 p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -348,13 +364,25 @@ export const StudentPortal: React.FC = () => {
           <div className="px-3 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
             {targetPrinter?.name || kiosk?.printer_name || 'No Printer Connected'}
           </div>
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-            targetPrinter?.is_online
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+            !targetPrinter
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : targetPrinter.is_online
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-amber-50 text-amber-700 border-amber-200'
+              : 'bg-red-50 text-red-700 border border-red-200 shadow-xs'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${targetPrinter?.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            {targetPrinter?.is_online ? 'Spooler Ready' : 'Standby / Unconnected'}
+            <span className={`w-2 h-2 rounded-full ${
+              !targetPrinter
+                ? 'bg-amber-500'
+                : targetPrinter.is_online
+                ? 'bg-emerald-500 animate-pulse'
+                : 'bg-red-500'
+            }`} />
+            {!targetPrinter
+              ? 'No Printer'
+              : targetPrinter.is_online
+              ? 'Printer Online'
+              : 'Printer OFFLINE'}
           </div>
         </div>
       </div>
@@ -645,8 +673,20 @@ export const StudentPortal: React.FC = () => {
             <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-2xl font-bold text-slate-900">Configure Print Preferences</h3>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Target Printer: <span className="font-semibold text-slate-700">{targetPrinter?.name || 'Campus Kiosk Printer'}</span>
+                <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
+                  <span>Target Printer: <span className="font-semibold text-slate-700">{targetPrinter?.name || 'Campus Kiosk Printer'}</span></span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                    !targetPrinter
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : targetPrinter.is_online
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      !targetPrinter ? 'bg-amber-500' : targetPrinter.is_online ? 'bg-emerald-500' : 'bg-red-500'
+                    }`} />
+                    {!targetPrinter ? 'No Printer' : targetPrinter.is_online ? 'Online' : 'OFFLINE'}
+                  </span>
                 </p>
               </div>
               <div className="text-right">
@@ -935,7 +975,21 @@ export const StudentPortal: React.FC = () => {
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                 <span className="text-sm text-slate-500">Target Printer</span>
-                <span className="font-bold text-slate-900 text-sm">{targetPrinter?.name || 'Campus Printer'} ({config.duplex ? 'A4 Double-Sided' : 'A4 Single-Sided'})</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">{targetPrinter?.name || 'Campus Printer'} ({config.duplex ? 'A4 Double-Sided' : 'A4 Single-Sided'})</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                    !targetPrinter
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : targetPrinter.is_online
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      !targetPrinter ? 'bg-amber-500' : targetPrinter.is_online ? 'bg-emerald-500' : 'bg-red-500'
+                    }`} />
+                    {!targetPrinter ? 'No Printer' : targetPrinter.is_online ? 'Online' : 'OFFLINE'}
+                  </span>
+                </div>
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                 <span className="text-sm text-slate-500">Color Mode</span>
@@ -972,12 +1026,12 @@ export const StudentPortal: React.FC = () => {
               </div>
             )}
             {isPrinterOffline && !isPaperOut && (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-start gap-3 mb-6 text-left">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-3 mb-6 text-left shadow-xs">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-sm">Printer Currently Offline</div>
-                  <div className="text-xs text-amber-700 mt-0.5">
-                    The kiosk printer is currently offline or disconnected. Please notify attendant before proceeding.
+                  <div className="font-bold text-sm text-red-950">Hardware Interlock: Printer Currently OFFLINE</div>
+                  <div className="text-xs text-red-700 mt-0.5 leading-relaxed">
+                    The kiosk printer ({targetPrinter?.name}) is currently offline or unreachable. Please verify that the printer is powered on and connected to the Wi-Fi network or USB cable. Payment is temporarily blocked until the printer is back online.
                   </div>
                 </div>
               </div>
@@ -998,7 +1052,7 @@ export const StudentPortal: React.FC = () => {
                 {isPaperOut
                   ? 'Paper Tray Empty'
                   : isPrinterOffline
-                  ? 'Printer Offline'
+                  ? 'Printer OFFLINE — Payment Paused'
                   : isCreatingJob
                   ? 'Initializing Payment...'
                   : 'Proceed to UPI Payment'}

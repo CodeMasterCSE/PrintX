@@ -101,13 +101,19 @@ def get_analytics(db: Session = Depends(get_db)):
     total_pages = db.query(func.sum(PrintJob.sheets_used)).filter(PrintJob.status == JobStatus.COMPLETED).scalar() or 0
 
     # Hardware Telemetry
+    total_printers = db.query(func.count(Printer.id)).scalar() or 0
     active_printers = db.query(func.count(Printer.id)).filter(Printer.is_online == True).scalar() or 0
+    offline_printers = db.query(func.count(Printer.id)).filter(Printer.is_online == False).scalar() or 0
     active_agents = db.query(func.count(PrintAgent.id)).filter(PrintAgent.is_active == True).scalar() or 0
     total_spooler_depth = db.query(func.sum(Printer.queue_length)).scalar() or 0
 
     system_health = "Operational"
-    if active_printers == 0:
-        system_health = "Offline (No Active Printers)"
+    if total_printers == 0:
+        system_health = "No Printers Configured"
+    elif active_printers == 0:
+        system_health = "Printers OFFLINE"
+    elif offline_printers > 0:
+        system_health = f"Degraded ({offline_printers} OFFLINE)"
     elif failed_jobs > 0 and (failed_jobs / max(total_jobs, 1)) > 0.3:
         system_health = "Degraded (High Failure Rate)"
 
@@ -305,11 +311,13 @@ def discover_system_printers(db: Session = Depends(get_db)):
         port_name = "Local"
         supports_col = True
         supports_dup = False
+        raw_status = 0
         try:
             handle = win32print.OpenPrinter(p_name)
             details = win32print.GetPrinter(handle, 2)
             driver_name = details.get("pDriverName", p_name)
             port_name = details.get("pPortName", "Local")
+            raw_status = details.get("Status", 0)
             dm = details.get("pDevMode")
             if dm:
                 try:
@@ -342,6 +350,14 @@ def discover_system_printers(db: Session = Depends(get_db)):
 
         existing = registered_printers.get(p_name)
 
+        status_str = "online"
+        if raw_status & 0x00000080:  # Spooler reported OFFLINE
+            from app.core.printer_utils import is_network_printer_reachable
+            if is_network_printer_reachable(port_name):
+                status_str = "online"
+            else:
+                status_str = "offline"
+
         discovered.append(DiscoveredPrinterItem(
             name=p_name,
             driver_name=driver_name,
@@ -350,7 +366,7 @@ def discover_system_printers(db: Session = Depends(get_db)):
             is_virtual=is_virt,
             is_already_added=existing is not None,
             existing_printer_id=existing.id if existing else None,
-            status="online",
+            status=status_str,
             supports_color=supports_col,
             supports_duplex=supports_dup
         ))

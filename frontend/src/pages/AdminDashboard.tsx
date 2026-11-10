@@ -354,11 +354,25 @@ export const AdminDashboard: React.FC = () => {
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
               <span className="text-xs font-semibold text-slate-500 uppercase">System Status</span>
               <div className="text-2xl font-bold text-slate-900 mt-2 flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-                {analytics?.system_health || 'Operational'}
+                <span className={`w-3 h-3 rounded-full ${
+                  analytics?.system_health?.toLowerCase().includes('offline')
+                    ? 'bg-red-500 animate-ping'
+                    : analytics?.system_health?.toLowerCase().includes('degraded')
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500 animate-pulse'
+                }`} />
+                <span className={`text-xl ${
+                  analytics?.system_health?.toLowerCase().includes('offline')
+                    ? 'text-red-600 font-bold'
+                    : analytics?.system_health?.toLowerCase().includes('degraded')
+                    ? 'text-amber-600 font-bold'
+                    : 'text-slate-900'
+                }`}>
+                  {analytics?.system_health || 'Operational'}
+                </span>
               </div>
               <div className="text-[11px] text-slate-400 mt-1 font-mono">
-                Active Agents: {analytics?.active_agents_count || 1}
+                Active Agents: {analytics?.active_agents_count || 1} | Printers: {analytics?.active_printers_count || 0} Online
               </div>
             </div>
           </div>
@@ -405,13 +419,30 @@ export const AdminDashboard: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase ${
-                          p.is_online ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                      <div className="text-right flex flex-col items-end">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase inline-flex items-center gap-1.5 ${
+                          p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : p.is_online
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-red-50 text-red-700 border border-red-200 shadow-xs'
                         }`}>
-                          {p.status}
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                              ? 'bg-amber-500'
+                              : p.is_online
+                              ? 'bg-emerald-500 animate-pulse'
+                              : 'bg-red-500'
+                          }`} />
+                          {p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                            ? 'Out of Paper'
+                            : !p.is_online || p.status?.toLowerCase() === 'offline'
+                            ? 'OFFLINE'
+                            : p.status}
                         </span>
-                        <p className="text-[11px] text-slate-400 font-mono mt-1">Queue Depth: {p.queue_length} job(s)</p>
+                        <p className={`text-[11px] font-mono mt-1 ${!p.is_online ? 'text-red-500 font-semibold' : 'text-slate-400'}`}>
+                          {!p.is_online ? 'Hardware Disconnected' : `Queue Depth: ${p.queue_length} job(s)`}
+                        </p>
                       </div>
                     </div>
                   ))
@@ -497,6 +528,21 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
+          {printerList.some((p: any) => !p.is_online || p.status?.toLowerCase() === 'offline') && (
+            <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                <div>
+                  <span className="font-bold text-red-900">Hardware OFFLINE Alert: </span>
+                  One or more configured printers are currently OFFLINE or disconnected. Print jobs will be held or routed to an online failover queue.
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold uppercase tracking-wider text-[10px] border border-red-200 shrink-0">
+                OFFLINE DETECTED
+              </span>
+            </div>
+          )}
+
           {printerList.length === 0 ? (
             <div className="py-16 px-6 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
               <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-4">
@@ -541,15 +587,31 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.driver_name}</td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.port_name}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
                           p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
                             ? 'bg-amber-100 text-amber-800 border border-amber-300'
                             : p.is_online
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-red-50 text-red-700 border border-red-200'
                         }`}>
-                          {p.status === 'out_of_paper' ? 'Out of Paper' : p.status}
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                              ? 'bg-amber-500'
+                              : p.is_online
+                              ? 'bg-emerald-500'
+                              : 'bg-red-500'
+                          }`} />
+                          {p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                            ? 'Out of Paper'
+                            : !p.is_online || p.status?.toLowerCase() === 'offline'
+                            ? 'OFFLINE'
+                            : p.status}
                         </span>
+                        {!p.is_online && (
+                          <div className="text-[10px] text-red-600 font-medium mt-1">
+                            Printer offline or disconnected
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-900">{p.queue_length} job(s)</td>
                       <td className="px-6 py-4 text-right space-x-2">

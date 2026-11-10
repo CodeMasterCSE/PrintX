@@ -1,3 +1,5 @@
+import re
+import socket
 from typing import List, Optional, Dict, Any
 from app.logging_config import logger
 from app.models import AgentPrinterInfo
@@ -9,6 +11,26 @@ try:
 except ImportError:
     win32print = None
     HAS_WIN32PRINT = False
+
+
+def is_network_printer_reachable(port_name: str, timeout: float = 0.5) -> bool:
+    """
+    Checks if a network printer is reachable via RAW port 9100, IPP port 631, or HTTP port 80.
+    Overrides false-positive PRINTER_STATUS_OFFLINE flags caused by Windows WSD / SNMP probing failures.
+    """
+    match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', port_name)
+    if not match:
+        return False
+    ip = match.group(1)
+    for port in (9100, 631, 80):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                if s.connect_ex((ip, port)) == 0:
+                    return True
+        except Exception:
+            pass
+    return False
 
 
 class PrinterManager:
@@ -79,9 +101,15 @@ class PrinterManager:
                     status_text = "out_of_paper"
                     status_details = "Paper tray empty - please refill paper"
                 elif raw_status & 0x00000080:  # PRINTER_STATUS_OFFLINE
-                    status_text = "offline"
-                    status_details = "Printer offline or disconnected"
-                    is_online = False
+                    # Verify if network printer is actually online on Port 9100 / 631 (bypassing SNMP/WSD false-positives)
+                    if is_network_printer_reachable(port_name):
+                        status_text = "online"
+                        status_details = "Ready (Direct TCP/IP)"
+                        is_online = True
+                    else:
+                        status_text = "offline"
+                        status_details = "Printer offline or disconnected"
+                        is_online = False
                 elif raw_status & 0x00400000:  # PRINTER_STATUS_DOOR_OPEN
                     status_text = "door_open"
                     status_details = "Printer cover or ink door open"
@@ -121,40 +149,72 @@ class PrinterManager:
         """
         Discovers and resolves the target printer queue for any connected physical printer.
         Prioritizes the exact printer requested by the print job or server configuration.
+        Includes intelligent auto-failover: if the requested queue is offline (e.g. USB unplugged),
+        it seamlessly routes to an active online counterpart (e.g. Wi-Fi).
         """
         installed = self.get_installed_printers()
         installed_names = {p.name: p for p in installed}
 
         # 1. Exact match for requested printer name from job
         if requested_name and requested_name in installed_names:
-            logger.info(f"Resolved job requested printer queue: '{requested_name}'")
-            return installed_names[requested_name]
+            target = installed_names[requested_name]
+            if target.is_online:
+                logger.info(f"Resolved online requested printer queue: '{requested_name}'")
+                return target
+            else:
+                logger.warning(
+                    f"Requested printer '{requested_name}' is currently offline. Evaluating failover queues..."
+                )
 
         # 2. Case-insensitive or substring match for requested name
         if requested_name:
             for name, p in installed_names.items():
                 if requested_name.lower() in name.lower() or name.lower() in requested_name.lower():
-                    logger.info(f"Resolved printer queue via match: '{name}' (requested: '{requested_name}')")
-                    return p
+                    if p.is_online:
+                        logger.info(f"Resolved online printer queue via match: '{name}' (requested: '{requested_name}')")
+                        return p
 
-        # 3. Explicit TARGET_PRINTER_NAME from config if set
-        if self.target_name and self.target_name in installed_names:
+        # 3. Intelligent Auto-Failover: If requested printer is offline, find online physical alternative (e.g. Wi-Fi <-> USB)
+        if requested_name:
+            req_tokens = set(re.findall(r'\w+', requested_name.lower()))
+            for name, p in installed_names.items():
+                if not p.is_virtual and p.is_online:
+                    cand_tokens = set(re.findall(r'\w+', name.lower()))
+                    common = (req_tokens & cand_tokens) - {"series", "printer", "the", "pcl", "v4"}
+                    if common:
+                        logger.warning(
+                            f"Auto-Failover: Requested printer '{requested_name}' is offline. Routing print job to online counterpart: '{name}'"
+                        )
+                        return p
+
+        # 4. Explicit TARGET_PRINTER_NAME from config if set and online
+        if self.target_name and self.target_name in installed_names and installed_names[self.target_name].is_online:
             logger.info(f"Resolved configured target printer queue: '{self.target_name}'")
             return installed_names[self.target_name]
 
-        # 4. Default Windows printer if physical
+        # 5. Default Windows printer if physical and online
         for p in installed:
-            if p.is_default and not p.is_virtual:
+            if p.is_default and not p.is_virtual and p.is_online:
                 logger.info(f"Using default system physical printer queue: '{p.name}'")
                 return p
 
-        # 5. Any installed physical printer (USB, Network/Wi-Fi)
+        # 6. Any installed physical printer that is online (USB, Network/Wi-Fi)
         for p in installed:
-            if not p.is_virtual:
-                logger.info(f"Using available physical printer queue: '{p.name}'")
+            if not p.is_virtual and p.is_online:
+                logger.info(f"Using available online physical printer queue: '{p.name}'")
                 return p
 
-        # 6. Any installed printer (including virtual/default)
+        # 7. Fallback to requested or any installed physical printer even if spooler reported offline
+        if requested_name and requested_name in installed_names:
+            logger.warning(f"Using requested printer queue despite offline status: '{requested_name}'")
+            return installed_names[requested_name]
+
+        for p in installed:
+            if not p.is_virtual:
+                logger.warning(f"Using physical printer queue (may be offline): '{p.name}'")
+                return p
+
+        # 8. Any installed printer (including virtual/default)
         for p in installed:
             if p.is_default:
                 logger.warning(f"Using default system printer queue: '{p.name}'")

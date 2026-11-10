@@ -201,10 +201,20 @@ class PaymentService:
                     detail="Target printer currently has a paper jam. Please notify staff before completing payment."
                 )
             if not printer.is_online or norm_status in ("offline",):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Target printer is currently offline. Please check printer power and connection."
-                )
+                # Verify if network printer is actually online (preventing false-positive SNMP/WSD lockout)
+                from app.core.printer_utils import is_network_printer_reachable
+                if printer.port_name and is_network_printer_reachable(printer.port_name):
+                    printer.is_online = True
+                    printer.status = "online"
+                    db.commit()
+                else:
+                    # Check if an alternative physical printer is online (e.g. Wi-Fi / USB counterpart)
+                    alt_online = db.query(Printer).filter(Printer.is_online == True, Printer.id != printer.id).first()
+                    if not alt_online:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Target printer is currently offline. Please check printer power and Wi-Fi/USB connection."
+                        )
 
         # Idempotency check
         key = idempotency_key or f"PAY-{job.id}"

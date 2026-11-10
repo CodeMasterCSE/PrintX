@@ -86,6 +86,12 @@ def download_document(document_id: str, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
+    if doc.status == "purged" or doc.storage_path == "[PURGED]":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Document content has been securely purged per privacy retention policy (FERPA/GDPR compliance)."
+        )
+
     storage_provider = get_storage_provider()
     file_bytes = storage_provider.get_file_bytes(doc.storage_path)
     return Response(

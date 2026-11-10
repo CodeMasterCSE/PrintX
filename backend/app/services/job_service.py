@@ -169,6 +169,15 @@ class JobService:
         db.commit()
         db.refresh(job)
         logger.info(f"Job {job.job_number} transitioned: {current_status.value} -> {new_status.value}")
+
+        # Broadcast zero-latency update to Server-Sent Events (SSE) subscribers
+        try:
+            from app.core.events import event_broadcaster
+            job_payload = cls.populate_job_response(db, job).model_dump(mode="json")
+            event_broadcaster.broadcast_sync(f"job:{job.id}", "job_update", job_payload)
+        except Exception as e:
+            logger.debug(f"SSE broadcast skipped for job {job.job_number}: {e}")
+
         return job
 
     @classmethod

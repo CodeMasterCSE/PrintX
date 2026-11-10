@@ -14,6 +14,7 @@ from app.models.agent import PrintAgent
 from app.models.kiosk import Kiosk
 from app.models.pricing import PricingRule
 from app.models.audit import SystemSetting, AuditLog
+from app.models.user import User
 from app.schemas.admin import (
     AdminAnalyticsResponse,
     AdminJobListResponse,
@@ -24,7 +25,9 @@ from app.schemas.admin import (
     AdminKioskCreateRequest,
     AdminPrinterToggleRequest,
     AdminAgentRegisterRequest,
-    AdminAgentRegisterResponse
+    AdminAgentRegisterResponse,
+    DocumentPurgeRequest,
+    DocumentPurgeResponse
 )
 from app.schemas.pricing import PricingRuleResponse, PricingRuleUpdate
 from app.schemas.job import JobResponse
@@ -33,6 +36,7 @@ from app.schemas.kiosk import KioskResponse
 from app.schemas.printer import PrinterResponse
 from app.services.auth_service import require_admin_user, get_current_user
 from app.services.job_service import JobService
+from app.services.document_service import DocumentService
 from app.core.security import get_password_hash
 from app.core.logging import logger
 
@@ -311,3 +315,43 @@ def list_print_agents(db: Session = Depends(get_db)):
         }
         for a in agents
     ]
+
+
+@router.post("/documents/purge", response_model=DocumentPurgeResponse)
+def purge_expired_documents(
+    payload: Optional[DocumentPurgeRequest] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin_user)
+):
+    """
+    Automated Document Shredding & Privacy Retention Purge (FERPA/GDPR compliance).
+    Securely wipes binary files from disk/storage for completed print jobs past retention threshold.
+    Preserves financial and audit ledger entries.
+    """
+    retention_min = payload.retention_minutes if payload else 15
+    unprinted_hours = payload.unprinted_expiry_hours if payload else 24
+
+    result = DocumentService.purge_expired_documents(
+        db=db,
+        retention_minutes=retention_min,
+        unprinted_expiry_hours=unprinted_hours
+    )
+
+    # Log admin action in AuditLog
+    audit_entry = AuditLog(
+        user_id=admin.id,
+        action="DOCUMENT_PRIVACY_PURGE",
+        resource_type="document",
+        details=f"Shredded {result['purged_count']} expired documents ({result['freed_mb']} MB freed). Policy: {retention_min}m retention."
+    )
+    db.add(audit_entry)
+    db.commit()
+
+    return DocumentPurgeResponse(
+        purged_count=result["purged_count"],
+        freed_bytes=result["freed_bytes"],
+        freed_mb=result["freed_mb"],
+        errors=result["errors"],
+        message=f"Privacy purge complete: {result['purged_count']} document(s) securely shredded, {result['freed_mb']} MB disk space recovered."
+    )
+

@@ -71,14 +71,34 @@ PrintX is an open-source, production-grade smart self-service document printing 
 - **High-Resolution Zoom Modal:** Click-to-zoom modal with keyboard-friendly page flipping and fullscreen preview.
 - **Thumbnail HTTP Caching:** Added `Cache-Control: public, max-age=3600` headers on `/preview` for instant page carousel switching.
 
+### I. Real-Time Server-Sent Events (SSE) Streaming (Option B Completed)
+- **Event Broadcaster (`backend/app/core/events.py`):** In-memory async Pub/Sub event broadcaster (`EventBroadcaster`) supporting concurrent client channels (`job:{job_id}` and `printers`) with non-blocking broadcasting from both synchronous and asynchronous contexts, plus 15s keepalive ping comments (`: keepalive\n\n`).
+- **Job Status SSE Endpoint:** `GET /api/v1/jobs/{job_id}/stream` emitting immediate snapshot event `job_update` on connection, and streaming real-time status transitions (`PAYMENT_VERIFIED`, `QUEUED`, `SUBMITTED_TO_SPOOLER`, `PRINTING`, `COMPLETED`, `FAILED`, `CANCELLED`) with zero latency.
+- **Printer Telemetry SSE Endpoint:** `GET /api/v1/printers/stream` emitting initial `printer_snapshot`, followed by live telemetry events on spooler queue depth, paper status, and online/offline changes.
+- **Student Portal SSE Hookup (`frontend/src/pages/StudentPortal.tsx`):** Connects to `EventSource('/api/v1/jobs/{job_id}/stream')` during Step 4 (Payment) and Step 5 (Printing). Pushed events instantly advance the user interface without polling delay, while retaining background 4s polling as a resilient fallback.
+- **Kiosk Standby SSE Hookup (`frontend/src/pages/KioskDisplay.tsx`):** Listens to `EventSource('/api/v1/printers/stream')` for instant telemetry updates and queue depth synchronization.
+
+### J. Automated Document Shredding & Hardware Paper-Out Interlock (Option C Completed)
+- **FERPA & GDPR Privacy Shredder (`DocumentService.purge_expired_documents`):** Automatically wipes physical binary files from disk/S3 storage for jobs in terminal states (`COMPLETED`, `CANCELLED`, `FAILED`, `EXPIRED`) older than 15 minutes, or expired unprinted uploads. Sets `Document.status = PURGED` and `Document.storage_path = "[PURGED]"` while strictly preserving the immutable financial ledger in `PrintJob`.
+- **410 Gone Protection:** `/api/v1/documents/{id}/preview` and `/download` return `HTTP 410 Gone` if document content has been purged.
+- **Admin Shredding Endpoint & UI:** `POST /api/v1/admin/documents/purge` with full `AuditLog` tracking, and a one-click manual shredder button in the Admin Dashboard Settings tab.
+- **Periodic Background Shredder:** Automated lifespan background task in `backend/app/main.py` executing document purge every 5 minutes.
+- **Real-Time Paper-Out Hardware Interlock:**
+  - `windows-agent/app/printer_manager.py` and `spooler_monitor.py` detect Win32 spooler constants (`PRINTER_STATUS_PAPER_OUT`, `JOB_STATUS_PAPEROUT`, `PRINTER_STATUS_OFFLINE`, `PRINTER_STATUS_DOOR_OPEN`).
+  - `backend/app/services/payment_service.py` strictly blocks UPI payment checkout (`HTTP 400 Bad Request`) if the target printer is out of paper, paper-jammed, or offline, preventing student fund loss before paper is physically confirmed.
+  - `frontend/src/pages/StudentPortal.tsx` displays prominent amber warning banners in Step 3 & Step 4 and disables the checkout button when paper is empty.
+  - `frontend/src/pages/KioskDisplay.tsx` displays pulsing top banner *"ATTENTION: Printer Paper Tray Empty — Please reload A4 paper tray"*.
+  - `frontend/src/pages/AdminDashboard.tsx` displays `Out of Paper` badge with quick simulation buttons to test the interlock.
+
 ---
 
-## 3. Automated Test Verification (71 Total Tests Passing)
+## 3. Automated Test Verification (80 Total Tests Passing)
 
 | Component | Test Suite | Tests | Result | Duration |
 |:---|:---|:---:|:---:|:---:|
 | Backend Core & Auth | `backend/tests/test_auth.py` | 6 | **6 PASSED** | 0.4s |
 | Document Engine & Multi-Format | `backend/tests/test_documents.py` | 11 | **11 PASSED** | 0.8s |
+| Real-Time SSE & Privacy Interlock | `backend/tests/test_sse_and_privacy_interlock.py` | 9 | **9 PASSED** | 0.62s |
 | Storage Abstraction & Download | `backend/tests/test_storage.py` | 4 | **4 PASSED** | 0.2s |
 | Health & Readiness | `backend/tests/test_health.py` | 3 | **3 PASSED** | 0.1s |
 | Job State Machine & Safeguards | `backend/tests/test_jobs.py` | 12 | **12 PASSED** | 1.45s |
@@ -88,7 +108,7 @@ PrintX is an open-source, production-grade smart self-service document printing 
 | End-to-End Acceptance Suite | `backend/tests/test_e2e_acceptance.py` | 1 | **1 PASSED** | 0.46s |
 | Windows Agent Controller | `windows-agent/tests/` | 8 | **8 PASSED** | 0.28s |
 | Frontend Workflow & Config | `frontend/src/tests/` | 6 | **6 PASSED** | 2.11s |
-| **Total Automated Suite** | | **71** | **71 PASSED (0 failures)** | |
+| **Total Automated Suite** | | **80** | **80 PASSED (0 failures)** | |
 
 ---
 

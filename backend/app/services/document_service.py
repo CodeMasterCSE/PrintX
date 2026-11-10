@@ -213,6 +213,12 @@ class DocumentService:
         """
         Generates a PNG thumbnail preview for the specified page number.
         """
+        if document.status == DocumentStatus.PURGED or document.storage_path == "[PURGED]":
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Document content has been securely purged per privacy retention policy (FERPA/GDPR compliance)."
+            )
+
         storage_provider = get_storage_provider()
         try:
             file_bytes = storage_provider.get_file_bytes(document.storage_path)
@@ -225,12 +231,108 @@ class DocumentService:
             img_bytes = pix.tobytes("png")
             doc.close()
             return img_bytes
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to generate preview for document {document.id}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Unable to generate document preview."
             )
+
+    @classmethod
+    def purge_expired_documents(
+        cls,
+        db: Session,
+        retention_minutes: int = 15,
+        unprinted_expiry_hours: int = 24
+    ) -> Dict[str, Any]:
+        """
+        Automated Document Shredding & Privacy Retention Purge (FERPA/GDPR compliance).
+        Securely deletes the physical binary file from disk/S3 storage while preserving
+        the immutable PrintJob audit ledger and receipt metadata.
+
+        Criteria:
+        1. Completed/Cancelled/Failed/Expired jobs: All associated print jobs must be in a terminal state
+           and older than `retention_minutes`.
+        2. Abandoned uploads: Documents with no print jobs where created_at is older than `unprinted_expiry_hours`
+           or past `expires_at`.
+        """
+        from app.models.job import PrintJob, JobStatus
+        now = datetime.now(timezone.utc)
+        terminal_cutoff = now - timedelta(minutes=retention_minutes)
+        abandoned_cutoff = now - timedelta(hours=unprinted_expiry_hours)
+
+        purged_count = 0
+        freed_bytes = 0
+        errors = []
+
+        storage_provider = get_storage_provider()
+
+        # Query documents that are not yet marked PURGED
+        candidates = db.query(Document).filter(
+            Document.status != DocumentStatus.PURGED,
+            Document.storage_path != "[PURGED]"
+        ).all()
+
+        for doc in candidates:
+            should_purge = False
+            reason = ""
+
+            if doc.print_jobs:
+                # Check if ALL jobs are terminal
+                all_terminal = all(
+                    j.status in (JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.FAILED, JobStatus.EXPIRED)
+                    for j in doc.print_jobs
+                )
+                if all_terminal:
+                    # Check if the newest job update is older than retention_minutes
+                    latest_job_time = max(
+                        (j.updated_at or j.created_at or now) for j in doc.print_jobs
+                    )
+                    # Handle naive vs aware datetimes
+                    if latest_job_time.tzinfo is None:
+                        latest_job_time = latest_job_time.replace(tzinfo=timezone.utc)
+                    if latest_job_time <= terminal_cutoff:
+                        should_purge = True
+                        reason = f"All jobs reached terminal status > {retention_minutes}m ago"
+            else:
+                # Unprinted document
+                created = doc.created_at or now
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                expires = doc.expires_at
+                if expires and expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+
+                if (expires and expires <= now) or (created <= abandoned_cutoff):
+                    should_purge = True
+                    reason = "Unprinted upload expired"
+
+            if should_purge:
+                try:
+                    if doc.storage_path and doc.storage_path != "[PURGED]":
+                        storage_provider.delete_file(doc.storage_path)
+
+                    freed_bytes += (doc.file_size_bytes or 0)
+                    doc.status = DocumentStatus.PURGED
+                    doc.storage_path = "[PURGED]"
+                    purged_count += 1
+                    logger.info(f"Privacy Purge: Shredded document {doc.id} ({doc.original_filename}) - {reason}")
+                except Exception as e:
+                    err_msg = f"Failed to purge document {doc.id}: {str(e)}"
+                    logger.error(err_msg)
+                    errors.append(err_msg)
+
+        if purged_count > 0:
+            db.commit()
+
+        return {
+            "purged_count": purged_count,
+            "freed_bytes": freed_bytes,
+            "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+            "errors": errors
+        }
 
     @classmethod
     def delete_document(cls, db: Session, document: Document) -> None:

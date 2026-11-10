@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from app.models.payment import Payment, PaymentStatus, PaymentProvider, PaymentEvent
 from app.models.job import PrintJob, JobStatus
+from app.models.printer import Printer, PrinterStatus
 from app.schemas.payment import PaymentResponse
 from app.services.job_service import JobService
 from app.core.config import settings
@@ -179,6 +180,31 @@ class PaymentService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Amount mismatch. Expected ₹{job.price:.2f}, got ₹{amount:.2f}."
             )
+
+        # Real-Time Hardware Interlock: Paper-out / Offline / Jam payment block
+        printer = job.printer
+        if not printer and job.printer_id:
+            printer = db.query(Printer).filter(Printer.id == job.printer_id).first()
+        if not printer:
+            printer = db.query(Printer).filter(Printer.is_default == True).first()
+
+        if printer:
+            norm_status = (printer.status or "").lower()
+            if norm_status in ("out_of_paper", "paper_out"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Target printer is currently out of paper. Please refill the paper tray before completing payment."
+                )
+            if norm_status in ("paper_jam",):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Target printer currently has a paper jam. Please notify staff before completing payment."
+                )
+            if not printer.is_online or norm_status in ("offline",):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Target printer is currently offline. Please check printer power and connection."
+                )
 
         # Idempotency check
         key = idempotency_key or f"PAY-{job.id}"

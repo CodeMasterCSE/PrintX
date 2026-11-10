@@ -32,8 +32,10 @@ ENV/
 *.db-wal
 data/processed_jobs.json
 data/*.pdf
+windows-agent/data/processed_jobs.json
 uploads/*
 !uploads/.gitkeep
+backend/uploads/
 
 # Testing & logs
 .pytest_cache/

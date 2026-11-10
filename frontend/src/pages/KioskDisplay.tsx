@@ -14,7 +14,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { api } from '../api/client';
 import { KioskConfig } from '../types';
@@ -54,19 +55,86 @@ export const KioskDisplay: React.FC = () => {
     refetchInterval: 10000,
   });
 
-  // Fetch printers status
+  // Fetch printers status (with polling fallback)
   const { data: printers } = useQuery<any[]>({
     queryKey: ['printers-status'],
     queryFn: () => api.listPrinters(),
     refetchInterval: 5000,
   });
 
-  const activePrinter = printers?.find((p: any) => p.name?.includes('Smart Tank') || p.is_default) || printers?.[0];
+  const [livePrinters, setLivePrinters] = useState<any[]>([]);
+
+  // Real-time SSE Telemetry Stream (Option B)
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/v1/printers/stream');
+
+      eventSource.addEventListener('printer_snapshot', (e) => {
+        try {
+          const snapshot = JSON.parse(e.data);
+          if (Array.isArray(snapshot)) setLivePrinters(snapshot);
+        } catch (err) {
+          console.error('SSE snapshot parse error:', err);
+        }
+      });
+
+      eventSource.addEventListener('printer_update', (e) => {
+        try {
+          const updated = JSON.parse(e.data);
+          setLivePrinters((prev) => {
+            const index = prev.findIndex((p) => p.id === updated.id);
+            if (index >= 0) {
+              const copy = [...prev];
+              copy[index] = updated;
+              return copy;
+            }
+            return [...prev, updated];
+          });
+        } catch (err) {
+          console.error('SSE printer_update parse error:', err);
+        }
+      });
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch (err) {
+      console.warn('SSE EventSource init failed:', err);
+    }
+
+    return () => {
+      if (eventSource) eventSource.close();
+    };
+  }, []);
+
+  const displayPrinters = livePrinters.length > 0 ? livePrinters : (printers || []);
+  const activePrinter = displayPrinters?.find((p: any) => p.name?.includes('Smart Tank') || p.is_default) || displayPrinters?.[0];
+  const isPaperOut = activePrinter?.status === 'out_of_paper' || activePrinter?.status === 'PAPER_OUT';
+  const isOffline = activePrinter?.is_online === false || activePrinter?.status === 'offline';
+
   const qrUrl = `/api/v1/kiosks/${code}/qr.png`;
   const mobilePortalUrl = `${window.location.origin}/print?device=${code}`;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between selection:bg-indigo-500 selection:text-white font-sans">
+      {/* Real-Time Paper-Out Hardware Interlock Banner (Option C) */}
+      {isPaperOut && (
+        <div className="bg-amber-600/95 text-white px-8 py-3.5 flex items-center justify-center gap-3 font-semibold text-sm shadow-lg border-b border-amber-500/50 animate-pulse">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>ATTENTION: Printer Paper Tray Empty — Please reload A4 paper tray to resume printing.</span>
+        </div>
+      )}
+      {isOffline && !isPaperOut && (
+        <div className="bg-rose-600/95 text-white px-8 py-3.5 flex items-center justify-center gap-3 font-semibold text-sm shadow-lg border-b border-rose-500/50">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>ATTENTION: Kiosk Printer Offline — Spooler subsystem disconnected. Attendant alerted.</span>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <header className="px-8 py-5 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -93,12 +161,12 @@ export const KioskDisplay: React.FC = () => {
             <div className="relative">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  activePrinter?.is_online !== false ? 'bg-emerald-500' : 'bg-amber-500'
+                  isPaperOut ? 'bg-amber-400' : isOffline ? 'bg-rose-500' : 'bg-emerald-500'
                 }`}
               />
               <div
                 className={`absolute inset-0 rounded-full animate-ping opacity-75 ${
-                  activePrinter?.is_online !== false ? 'bg-emerald-500' : 'bg-amber-500'
+                  isPaperOut ? 'bg-amber-400' : isOffline ? 'bg-rose-500' : 'bg-emerald-500'
                 }`}
               />
             </div>
@@ -107,7 +175,13 @@ export const KioskDisplay: React.FC = () => {
                 {activePrinter?.name || 'HP Smart Tank 585'}
               </div>
               <div className="text-[11px] text-slate-400">
-                {activePrinter?.is_online !== false ? 'Ready to Print' : 'Maintenance'}
+                {isPaperOut ? (
+                  <span className="text-amber-300 font-bold">Paper Tray Empty</span>
+                ) : isOffline ? (
+                  <span className="text-rose-400 font-bold">Offline</span>
+                ) : (
+                  'Ready to Print'
+                )}
                 {activePrinter?.queue_length ? ` • ${activePrinter.queue_length} in queue` : ' • Queue Empty'}
               </div>
             </div>

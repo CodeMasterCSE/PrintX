@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
@@ -22,6 +23,7 @@ from app.storage.storage_provider import get_storage_provider
 from app.core.logging import logger
 from app.core.security import verify_password
 from app.core.config import settings
+from app.core.events import event_broadcaster
 
 router = APIRouter(prefix="/jobs", tags=["Print Jobs"])
 
@@ -119,6 +121,41 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
     return JobService.populate_job_response(db, job)
+
+
+@router.get("/{job_id}/stream")
+async def stream_job_status(
+    job_id: str,
+    request: Request,
+    max_events: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Real-time Server-Sent Events (SSE) telemetry stream for a print job.
+    Instantly pushes job state transitions, queue movement, and completion.
+    Emits an immediate snapshot on connection, and periodic keep-alives.
+    """
+    job = db.query(PrintJob).filter(PrintJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Print job not found.")
+
+    initial_job_data = JobService.populate_job_response(db, job).model_dump(mode="json")
+
+    return StreamingResponse(
+        event_broadcaster.event_generator(
+            channel=f"job:{job_id}",
+            initial_data=initial_job_data,
+            initial_event="job_update",
+            request=request,
+            max_events=max_events
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.get("/{job_id}/receipt", response_model=JobReceiptResponse)

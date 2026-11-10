@@ -63,7 +63,7 @@ class PrinterManager:
                 c_jobs = details.get("cJobs", 0)
                 raw_status = details.get("Status", 0)
 
-                # Decode status
+                # Decode status using Windows WinSpool constants
                 status_text = "online"
                 status_details = "Ready"
                 is_online = True
@@ -71,13 +71,24 @@ class PrinterManager:
                 if raw_status & 0x00000001:  # PRINTER_STATUS_PAUSED
                     status_text = "paused"
                     status_details = "Printer is paused"
+                elif raw_status & 0x00000008:  # PRINTER_STATUS_PAPER_JAM
+                    status_text = "paper_jam"
+                    status_details = "Paper jam detected in transport path"
+                    is_online = False
+                elif raw_status & (0x00000010 | 0x00000020):  # PRINTER_STATUS_PAPER_OUT / MANUAL_FEED
+                    status_text = "out_of_paper"
+                    status_details = "Paper tray empty - please refill paper"
+                elif raw_status & 0x00000080:  # PRINTER_STATUS_OFFLINE
+                    status_text = "offline"
+                    status_details = "Printer offline or disconnected"
+                    is_online = False
+                elif raw_status & 0x00400000:  # PRINTER_STATUS_DOOR_OPEN
+                    status_text = "door_open"
+                    status_details = "Printer cover or ink door open"
                 elif raw_status & 0x00000002:  # PRINTER_STATUS_ERROR
                     status_text = "error"
                     status_details = "General printer error"
                     is_online = False
-                elif raw_status & 0x00000020:  # PRINTER_STATUS_OUT_OF_PAPER
-                    status_text = "out_of_paper"
-                    status_details = "Paper tray empty"
                 elif raw_status & 0x00000004:  # PRINTER_STATUS_PENDING_DELETION
                     status_text = "offline"
                     is_online = False

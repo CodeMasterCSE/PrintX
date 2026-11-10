@@ -163,6 +163,11 @@ class SpoolerMonitor:
             "saw_in_queue": saw_job_in_queue
         }
 
+    def check_hardware_paper_out(self, printer_name: Optional[str] = None) -> bool:
+        """Returns True if any active spooler job or queue status indicates paper-out."""
+        jobs = self.get_active_spooler_jobs(printer_name)
+        return any(j.status_text == "out_of_paper" or bool(j.status_code & JOB_STATUS_PAPEROUT) for j in jobs)
+
 
 spooler_monitor = SpoolerMonitor()
 

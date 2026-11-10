@@ -20,7 +20,9 @@ import {
   Star,
   RotateCcw,
   Search,
-  Filter
+  Filter,
+  Trash2,
+  ShieldCheck
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -128,6 +130,33 @@ export const AdminDashboard: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
     } catch (err: any) {
       alert(`Error setting default: ${err.message}`);
+    }
+  };
+
+  const [purgeResult, setPurgeResult] = useState<string | null>(null);
+  const [isPurging, setIsPurging] = useState<boolean>(false);
+
+  const handlePurgeDocuments = async () => {
+    setIsPurging(true);
+    setPurgeResult(null);
+    try {
+      const res = await api.purgeDocuments({ retention_minutes: 15 });
+      setPurgeResult(`Shredded ${res.purged_count} document(s), recovering ${res.freed_mb} MB disk space.`);
+      queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
+    } catch (err: any) {
+      alert(`Purge failed: ${err.message}`);
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
+  const handleUpdatePrinterStatus = async (printerId: string, statusText: string, isOnline: boolean = true) => {
+    try {
+      await api.updatePrinterStatus(printerId, statusText, isOnline);
+      queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
+    } catch (err: any) {
+      alert(`Status update failed: ${err.message}`);
     }
   };
 
@@ -407,17 +436,38 @@ export const AdminDashboard: React.FC = () => {
                     <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.port_name}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                        p.is_online ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                        p.status === 'out_of_paper' || p.status === 'PAPER_OUT'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : p.is_online
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-red-50 text-red-700 border border-red-200'
                       }`}>
-                        {p.status}
+                        {p.status === 'out_of_paper' ? 'Out of Paper' : p.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 font-mono text-xs text-slate-900">{p.queue_length} job(s)</td>
                     <td className="px-6 py-4 text-right space-x-2">
+                      {p.status === 'out_of_paper' ? (
+                        <button
+                          onClick={() => handleUpdatePrinterStatus(p.id, 'online', true)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors"
+                          title="Simulate paper refill"
+                        >
+                          Clear Paper Out
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleUpdatePrinterStatus(p.id, 'out_of_paper', true)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
+                          title="Simulate paper empty to test interlock"
+                        >
+                          Simulate Paper Out
+                        </button>
+                      )}
                       <button
                         onClick={() => handleTogglePrinter(p.id, p.is_online)}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
-                          p.is_online ? 'bg-amber-100 hover:bg-amber-200 text-amber-800' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                          p.is_online ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
                         }`}
                       >
                         <Power className="w-3.5 h-3.5" />
@@ -615,48 +665,83 @@ export const AdminDashboard: React.FC = () => {
 
       {/* ================= TAB 5: SYSTEM SETTINGS ================= */}
       {activeTab === 'settings' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Settings className="w-5 h-5 text-brand-600" />
-            <h2 className="text-base font-bold text-slate-900">Platform Configuration Parameters</h2>
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Settings className="w-5 h-5 text-brand-600" />
+              <h2 className="text-base font-bold text-slate-900">Platform Configuration Parameters</h2>
+            </div>
+            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+              Configure global upload constraints, document retention policies, and hardware queue defaults.
+            </p>
+
+            <div className="space-y-4 max-w-xl">
+              {(settingsData?.settings || []).map((s: any) => (
+                <div key={s.key} className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                  <label className="block text-xs font-bold text-slate-800 font-mono mb-1">
+                    {s.key}
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2">{s.description}</p>
+                  <input
+                    type="text"
+                    defaultValue={s.value}
+                    onChange={(e) => setSettingsForm((prev) => ({ ...prev, [s.key]: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+              ))}
+
+              <button
+                onClick={() => updateSettingsMutation.mutate(settingsForm)}
+                disabled={Object.keys(settingsForm).length === 0 || updateSettingsMutation.isPending}
+                className="mt-4 py-2.5 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSavedSettings ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    Settings Saved Successfully!
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save Platform Settings
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-            Configure global upload constraints, document retention policies, and hardware queue defaults.
-          </p>
 
-          <div className="space-y-4 max-w-xl">
-            {(settingsData?.settings || []).map((s: any) => (
-              <div key={s.key} className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                <label className="block text-xs font-bold text-slate-800 font-mono mb-1">
-                  {s.key}
-                </label>
-                <p className="text-xs text-slate-500 mb-2">{s.description}</p>
-                <input
-                  type="text"
-                  defaultValue={s.value}
-                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, [s.key]: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
+          {/* Privacy Retention & Document Shredding Card (Option C) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-base font-bold text-slate-900">FERPA & GDPR Privacy Shredder</h2>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              PrintX enforces strict document privacy: student upload binaries are wiped from disk 15 minutes after completion.
+              Financial transaction proofs, job numbers, and immutable audit events are preserved for reconciliation.
+            </p>
+
+            {purgeResult && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                {purgeResult}
               </div>
-            ))}
+            )}
 
-            <button
-              onClick={() => updateSettingsMutation.mutate(settingsForm)}
-              disabled={Object.keys(settingsForm).length === 0 || updateSettingsMutation.isPending}
-              className="mt-4 py-2.5 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors flex items-center gap-2 disabled:opacity-50"
-            >
-              {isSavedSettings ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Settings Saved Successfully!
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Save Platform Settings
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handlePurgeDocuments}
+                disabled={isPurging}
+                className="py-2.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                {isPurging ? 'Shredding Expired Documents...' : 'Run Privacy Shredder Now'}
+              </button>
+              <span className="text-[11px] text-slate-400">
+                Retention threshold: 15 minutes post-print
+              </span>
+            </div>
           </div>
         </div>
       )}

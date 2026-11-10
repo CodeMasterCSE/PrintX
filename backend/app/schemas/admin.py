@@ -59,6 +59,19 @@ class AdminPrinterToggleRequest(BaseModel):
     is_online: bool
 
 
+class DocumentPurgeRequest(BaseModel):
+    retention_minutes: int = 15
+    unprinted_expiry_hours: int = 24
+
+
+class DocumentPurgeResponse(BaseModel):
+    purged_count: int
+    freed_bytes: int
+    freed_mb: float
+    errors: List[str] = []
+    message: str
+
+
 class AdminAgentRegisterRequest(BaseModel):
     name: str
     hostname: Optional[str] = None

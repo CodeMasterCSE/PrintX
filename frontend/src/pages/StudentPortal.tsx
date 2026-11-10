@@ -97,6 +97,17 @@ export const StudentPortal: React.FC = () => {
     queryFn: () => api.getKioskConfig(kioskCode),
   });
 
+  // Fetch Printers Telemetry for Paper-Out / Online Interlock (Option C)
+  const { data: printers } = useQuery({
+    queryKey: ['printers-telemetry'],
+    queryFn: () => api.listPrinters(),
+    refetchInterval: 5000,
+  });
+
+  const targetPrinter = printers?.find((p: any) => p.name?.includes('Smart Tank') || p.is_default) || printers?.[0];
+  const isPaperOut = targetPrinter?.status === 'out_of_paper' || targetPrinter?.status === 'PAPER_OUT';
+  const isPrinterOffline = targetPrinter?.is_online === false || targetPrinter?.status === 'offline';
+
   // Re-estimate price whenever document or config changes
   useEffect(() => {
     if (!document) return;
@@ -128,31 +139,67 @@ export const StudentPortal: React.FC = () => {
     };
   }, [document, config]);
 
-  // Polling during active printing steps (Step 4 & 5)
+  // Real-Time Server-Sent Events (SSE) Stream with Polling Fallback (Option B)
   useEffect(() => {
     if (!job || activeStep < 4 || activeStep === 6) return;
 
+    let eventSource: EventSource | null = null;
+
+    try {
+      eventSource = new EventSource(`/api/v1/jobs/${job.id}/stream`);
+
+      eventSource.addEventListener('job_update', (e) => {
+        try {
+          const updatedJob = JSON.parse(e.data);
+          setJob(updatedJob);
+
+          // Zero-latency state progression
+          if (activeStep === 4 && (updatedJob.status === 'PAYMENT_VERIFIED' || updatedJob.status === 'QUEUED')) {
+            setActiveStep(5);
+          }
+          if (activeStep === 5 && updatedJob.status === 'COMPLETED') {
+            setActiveStep(6);
+          }
+        } catch (err) {
+          console.error('SSE job_update parse error:', err);
+        }
+      });
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch (err) {
+      console.warn('Failed to initialize SSE EventSource, using polling fallback:', err);
+    }
+
+    // Resilient Polling Fallback: runs every 4s
     const interval = setInterval(async () => {
       try {
         const updatedJob = await api.getJob(job.id);
         setJob(updatedJob);
 
-        // If in Step 4 and payment verifies, advance to Step 5
         if (activeStep === 4 && (updatedJob.status === 'PAYMENT_VERIFIED' || updatedJob.status === 'QUEUED')) {
           setActiveStep(5);
         }
 
-        // If in Step 5 and completed, advance to Step 6
         if (activeStep === 5 && updatedJob.status === 'COMPLETED') {
           setActiveStep(6);
         }
       } catch (err) {
         console.error('Job polling error:', err);
       }
-    }, 2000);
+    }, 4000);
 
-    return () => clearInterval(interval);
-  }, [job, activeStep]);
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+      clearInterval(interval);
+    };
+  }, [job?.id, activeStep]);
 
   // Handle document/image file selection
   const handleFileUpload = async (file: File) => {
@@ -882,6 +929,29 @@ export const StudentPortal: React.FC = () => {
               </div>
             </div>
 
+            {isPaperOut && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-start gap-3 mb-6 text-left">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-sm">Paper Tray Empty — Checkout Blocked</div>
+                  <div className="text-xs text-amber-700 mt-0.5">
+                    The printer at this kiosk is currently out of paper. To protect your payment, checkout is locked until the paper tray is reloaded.
+                  </div>
+                </div>
+              </div>
+            )}
+            {isPrinterOffline && !isPaperOut && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-start gap-3 mb-6 text-left">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-sm">Printer Currently Offline</div>
+                  <div className="text-xs text-amber-700 mt-0.5">
+                    The kiosk printer is currently offline or disconnected. Please notify attendant before proceeding.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setActiveStep(2)}
@@ -891,10 +961,16 @@ export const StudentPortal: React.FC = () => {
               </button>
               <button
                 onClick={handleProceedToPayment}
-                disabled={isCreatingJob}
-                className="w-2/3 py-3.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-base transition-colors shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={isCreatingJob || isPaperOut || isPrinterOffline}
+                className="w-2/3 py-3.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-base transition-colors shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isCreatingJob ? 'Initializing Payment...' : 'Proceed to UPI Payment'}
+                {isPaperOut
+                  ? 'Paper Tray Empty'
+                  : isPrinterOffline
+                  ? 'Printer Offline'
+                  : isCreatingJob
+                  ? 'Initializing Payment...'
+                  : 'Proceed to UPI Payment'}
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>
@@ -912,6 +988,18 @@ export const StudentPortal: React.FC = () => {
             <p className="text-sm text-slate-500 mt-1">
               Order Ref: <span className="font-mono text-slate-700 font-semibold">{payment.order_id}</span>
             </p>
+
+            {isPaperOut && (
+              <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-start gap-3 text-left">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-sm">Hardware Interlock: Paper Tray Empty</div>
+                  <div className="text-xs text-amber-700 mt-0.5">
+                    The printer paper tray is currently empty. Please notify attendant or reload paper before completing payment.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* UPI QR Display Card */}
             <div className="mt-8 p-6 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center">

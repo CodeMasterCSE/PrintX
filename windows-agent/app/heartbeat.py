@@ -3,6 +3,7 @@ import requests
 from app.config import agent_settings
 from app.logging_config import logger
 from app.printer_manager import printer_manager
+from app.spooler_monitor import spooler_monitor
 
 
 class AgentHeartbeat:
@@ -22,11 +23,15 @@ class AgentHeartbeat:
             logger.warning("No printer resolved for heartbeat report.")
             return False
 
+        current_status = target_info.status
+        if spooler_monitor.check_hardware_paper_out(target_info.name):
+            current_status = "out_of_paper"
+
         payload = {
             "agent_id": self.agent_id,
             "version": "1.0.0",
             "printer_name": target_info.name,
-            "printer_status": target_info.status,
+            "printer_status": current_status,
             "queue_length": target_info.queue_length,
             "is_online": target_info.is_online
         }

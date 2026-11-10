@@ -135,8 +135,16 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ is_online: isOnline }),
   }),
+  updatePrinterStatus: (printerId: string, status: string, isOnline?: boolean) => request<any>(`/printers/${printerId}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status, is_online: isOnline }),
+  }),
   setDefaultPrinter: (printerId: string) => request<any>(`/admin/printers/${printerId}/set-default`, {
     method: 'POST',
+  }),
+  purgeDocuments: (payload?: { retention_minutes?: number; unprinted_expiry_hours?: number }) => request<any>('/admin/documents/purge', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
   }),
   listPrinters: () => request<any[]>('/printers'),
 };

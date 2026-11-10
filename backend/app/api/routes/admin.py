@@ -27,7 +27,9 @@ from app.schemas.admin import (
     AdminAgentRegisterRequest,
     AdminAgentRegisterResponse,
     DocumentPurgeRequest,
-    DocumentPurgeResponse
+    DocumentPurgeResponse,
+    DiscoveredPrinterItem,
+    AdminPrinterCreateRequest
 )
 from app.schemas.pricing import PricingRuleResponse, PricingRuleUpdate
 from app.schemas.job import JobResponse
@@ -39,6 +41,13 @@ from app.services.job_service import JobService
 from app.services.document_service import DocumentService
 from app.core.security import get_password_hash
 from app.core.logging import logger
+
+try:
+    import win32print
+    HAS_WIN32PRINT = True
+except ImportError:
+    win32print = None
+    HAS_WIN32PRINT = False
 
 router = APIRouter(prefix="/admin", tags=["Admin Operations"])
 
@@ -262,6 +271,172 @@ def set_default_printer(printer_id: str, db: Session = Depends(get_db)):
     db.refresh(target)
     logger.info(f"Printer '{target.name}' set as global system default.")
     return PrinterResponse.model_validate(target)
+
+
+@router.get("/printers/discover", response_model=List[DiscoveredPrinterItem])
+def discover_system_printers(db: Session = Depends(get_db)):
+    """
+    Scans the host system using Windows Print Spooler APIs (win32print)
+    to discover connected physical printers (USB and Wi-Fi/Network).
+    Identifies connection types and flags already-registered devices.
+    """
+    discovered: List[DiscoveredPrinterItem] = []
+    registered_printers = {p.name: p for p in db.query(Printer).all()}
+
+    if not HAS_WIN32PRINT:
+        return []
+
+    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+    try:
+        raw_printers = win32print.EnumPrinters(flags)
+    except Exception as e:
+        logger.error(f"Failed to enumerate Windows printers: {e}")
+        return []
+
+    VIRTUAL_DRIVERS = {
+        "microsoft print to pdf", "onenote", "onenote (desktop)",
+        "onenote for windows 10", "fax", "microsoft xps document writer"
+    }
+
+    for p in raw_printers:
+        p_name = p[2]
+        handle = None
+        driver_name = p_name
+        port_name = "Local"
+        try:
+            handle = win32print.OpenPrinter(p_name)
+            details = win32print.GetPrinter(handle, 2)
+            driver_name = details.get("pDriverName", p_name)
+            port_name = details.get("pPortName", "Local")
+        except Exception:
+            pass
+        finally:
+            if handle:
+                try:
+                    win32print.ClosePrinter(handle)
+                except Exception:
+                    pass
+
+        # Determine connection interface
+        p_port_upper = port_name.upper()
+        p_name_upper = p_name.upper()
+        if "USB" in p_port_upper or "USB" in p_name_upper:
+            conn_type = "USB"
+        elif "WSD" in p_port_upper or "IP_" in p_port_upper or "HP" in p_port_upper or "." in port_name:
+            conn_type = "Wi-Fi / Network"
+        else:
+            conn_type = "Local Port"
+
+        is_virt = (p_name.lower().strip() in VIRTUAL_DRIVERS or driver_name.lower().strip() in VIRTUAL_DRIVERS)
+        if is_virt:
+            conn_type = "Virtual / Software"
+
+        existing = registered_printers.get(p_name)
+
+        discovered.append(DiscoveredPrinterItem(
+            name=p_name,
+            driver_name=driver_name,
+            port_name=port_name,
+            connection_type=conn_type,
+            is_virtual=is_virt,
+            is_already_added=existing is not None,
+            existing_printer_id=existing.id if existing else None,
+            status="online",
+            supports_color=True,
+            supports_duplex=False
+        ))
+
+    # Sort so physical devices (Wi-Fi and USB) appear first, and virtual/demo drivers at the bottom
+    discovered.sort(key=lambda x: (x.is_virtual, x.is_already_added, x.name))
+    return discovered
+
+
+@router.post("/printers/add", response_model=PrinterResponse, status_code=status.HTTP_201_CREATED)
+def add_printer(req: AdminPrinterCreateRequest, db: Session = Depends(get_db)):
+    """Registers a newly discovered or manually configured printer."""
+    existing = db.query(Printer).filter(Printer.name == req.name).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Printer '{req.name}' is already registered in PrintX."
+        )
+
+    printer_count = db.query(func.count(Printer.id)).scalar() or 0
+    is_def = req.is_default or (printer_count == 0)
+
+    if is_def:
+        db.query(Printer).update({Printer.is_default: False})
+
+    new_printer = Printer(
+        name=req.name,
+        driver_name=req.driver_name or req.name,
+        port_name=req.port_name or "USB001",
+        location=req.location or "Campus Kiosk",
+        supports_color=req.supports_color,
+        supports_duplex=req.supports_duplex,
+        is_default=is_def,
+        is_online=True,
+        status="online",
+        status_details="Ready for incoming print jobs",
+        queue_length=0
+    )
+    db.add(new_printer)
+    db.commit()
+    db.refresh(new_printer)
+
+    try:
+        from app.core.events import event_broadcaster
+        p_data = PrinterResponse.model_validate(new_printer).model_dump(mode="json")
+        event_broadcaster.broadcast_sync("printers", "printer_update", p_data)
+    except Exception:
+        pass
+
+    logger.info(f"Admin added new printer: '{new_printer.name}' (Port: {new_printer.port_name})")
+    return PrinterResponse.model_validate(new_printer)
+
+
+@router.delete("/printers/{printer_id}", response_model=Dict[str, str])
+def delete_printer(printer_id: str, db: Session = Depends(get_db)):
+    """Removes a printer from the system (decommissions demo or unused hardware)."""
+    printer = db.query(Printer).filter(Printer.id == printer_id).first()
+    if not printer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Printer not found.")
+
+    active_jobs = db.query(PrintJob).filter(
+        PrintJob.printer_id == printer.id,
+        PrintJob.status.in_([JobStatus.SUBMITTED_TO_SPOOLER, JobStatus.PRINTING])
+    ).count()
+
+    if active_jobs > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot remove printer '{printer.name}': {active_jobs} job(s) are actively printing."
+        )
+
+    # Unlink kiosks and historical jobs
+    db.query(Kiosk).filter(Kiosk.default_printer_id == printer.id).update({Kiosk.default_printer_id: None})
+    db.query(PrintJob).filter(PrintJob.printer_id == printer.id).update({PrintJob.printer_id: None})
+
+    p_name = printer.name
+    was_default = printer.is_default
+
+    db.delete(printer)
+    db.commit()
+
+    if was_default:
+        next_printer = db.query(Printer).first()
+        if next_printer:
+            next_printer.is_default = True
+            db.commit()
+
+    try:
+        from app.core.events import event_broadcaster
+        event_broadcaster.broadcast_sync("printers", "printer_update", {"id": printer_id, "status": "deleted"})
+    except Exception:
+        pass
+
+    logger.info(f"Admin removed printer '{p_name}' (ID: {printer_id})")
+    return {"message": f"Printer '{p_name}' successfully removed."}
 
 
 @router.post("/agents/register", response_model=AdminAgentRegisterResponse, status_code=status.HTTP_201_CREATED)

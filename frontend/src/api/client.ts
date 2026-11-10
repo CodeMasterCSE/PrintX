@@ -142,6 +142,22 @@ export const api = {
   setDefaultPrinter: (printerId: string) => request<any>(`/admin/printers/${printerId}/set-default`, {
     method: 'POST',
   }),
+  discoverPrinters: () => request<any[]>('/admin/printers/discover'),
+  addPrinter: (payload: {
+    name: string;
+    driver_name?: string;
+    port_name?: string;
+    location?: string;
+    supports_color?: boolean;
+    supports_duplex?: boolean;
+    is_default?: boolean;
+  }) => request<any>('/admin/printers/add', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  deletePrinter: (printerId: string) => request<any>(`/admin/printers/${printerId}`, {
+    method: 'DELETE',
+  }),
   purgeDocuments: (payload?: { retention_minutes?: number; unprinted_expiry_hours?: number }) => request<any>('/admin/documents/purge', {
     method: 'POST',
     body: JSON.stringify(payload || {}),

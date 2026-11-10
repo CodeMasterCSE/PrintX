@@ -22,7 +22,10 @@ import {
   Search,
   Filter,
   Trash2,
-  ShieldCheck
+  ShieldCheck,
+  Wifi,
+  Usb,
+  X
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -74,6 +77,14 @@ export const AdminDashboard: React.FC = () => {
   const [newKioskName, setNewKioskName] = useState<string>('');
   const [newKioskLocation, setNewKioskLocation] = useState<string>('');
   const [showAddKiosk, setShowAddKiosk] = useState<boolean>(false);
+
+  // State for printer discovery modal
+  const [showDiscoverModal, setShowDiscoverModal] = useState<boolean>(false);
+  const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
+  const [discoveredPrinters, setDiscoveredPrinters] = useState<any[]>([]);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [addingPrinterName, setAddingPrinterName] = useState<string | null>(null);
+  const [newPrinterLocation, setNewPrinterLocation] = useState<string>('Campus Kiosk');
 
   // State for job filter
   const [jobSearch, setJobSearch] = useState<string>('');
@@ -157,6 +168,57 @@ export const AdminDashboard: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
     } catch (err: any) {
       alert(`Status update failed: ${err.message}`);
+    }
+  };
+
+  const handleDiscoverPrinters = async () => {
+    setShowDiscoverModal(true);
+    setIsDiscovering(true);
+    setDiscoveryError(null);
+    try {
+      const res = await api.discoverPrinters();
+      setDiscoveredPrinters(res);
+    } catch (err: any) {
+      setDiscoveryError(err.message || 'Failed to scan for local or network printers');
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const handleAddPrinter = async (item: any) => {
+    setAddingPrinterName(item.name);
+    try {
+      await api.addPrinter({
+        name: item.name,
+        driver_name: item.driver_name,
+        port_name: item.port_name,
+        location: newPrinterLocation || 'Campus Kiosk',
+        supports_color: item.supports_color ?? true,
+        supports_duplex: false, // Strict: HP Smart Tank 585 simplex only
+        is_default: false,
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
+      setDiscoveredPrinters((prev) =>
+        prev.map((p) => (p.name === item.name ? { ...p, is_already_added: true } : p))
+      );
+    } catch (err: any) {
+      alert(`Failed to add printer: ${err.message}`);
+    } finally {
+      setAddingPrinterName(null);
+    }
+  };
+
+  const handleDeletePrinter = async (printer: any) => {
+    if (!window.confirm(`Are you sure you want to remove '${printer.name}' from PrintX?`)) {
+      return;
+    }
+    try {
+      await api.deletePrinter(printer.id);
+      queryClient.invalidateQueries({ queryKey: ['admin-printers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
+    } catch (err: any) {
+      alert(`Failed to remove printer: ${err.message}`);
     }
   };
 
@@ -402,10 +464,19 @@ export const AdminDashboard: React.FC = () => {
       {/* ================= TAB 2: PRINTER MANAGEMENT ================= */}
       {activeTab === 'printers' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-base font-bold text-slate-900">Windows 11 Installed Printers</h2>
-              <p className="text-xs text-slate-500 mt-1">Discovered through win32print on host agent machine.</p>
+              <h2 className="text-base font-bold text-slate-900">Windows 11 Hardware & Network Printers</h2>
+              <p className="text-xs text-slate-500 mt-1">Discovered through win32print on host agent machine (USB & Wi-Fi).</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDiscoverPrinters}
+                className="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs flex items-center gap-2 shadow-sm transition-colors"
+              >
+                <Search className="w-4 h-4" />
+                Discover Printers (Wi-Fi & USB)
+              </button>
             </div>
           </div>
 
@@ -482,6 +553,14 @@ export const AdminDashboard: React.FC = () => {
                           Set Default
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDeletePrinter(p)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-colors"
+                        title="Remove device from PrintX"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -741,6 +820,191 @@ export const AdminDashboard: React.FC = () => {
               <span className="text-[11px] text-slate-400">
                 Retention threshold: 15 minutes post-print
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= PRINTER DISCOVERY MODAL ================= */}
+      {showDiscoverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Hardware & Network Printer Discovery</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Scans Windows Spooler for USB cables & Wi-Fi / LAN network endpoints
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDiscoverModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    Location for new printers:
+                  </span>
+                  <input
+                    type="text"
+                    value={newPrinterLocation}
+                    onChange={(e) => setNewPrinterLocation(e.target.value)}
+                    placeholder="e.g. Campus Library Ground Floor"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleDiscoverPrinters}
+                  disabled={isDiscovering}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin text-brand-600' : ''}`} />
+                  Scan Again
+                </button>
+              </div>
+
+              {isDiscovering ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                  <RefreshCw className="w-8 h-8 text-brand-600 animate-spin" />
+                  <p className="text-sm font-semibold text-slate-700">Scanning local and network ports...</p>
+                  <p className="text-xs text-slate-400">Querying win32print EnumPrinters for USB, WSD, and IP queues</p>
+                </div>
+              ) : discoveryError ? (
+                <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <AlertCircle className="w-4 h-4" />
+                    Discovery Failed
+                  </div>
+                  <p>{discoveryError}</p>
+                </div>
+              ) : discoveredPrinters.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 text-xs">
+                  No printers detected. Ensure your printer is powered on and connected via USB or Wi-Fi.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {discoveredPrinters.map((p) => {
+                    const isUsb = p.connection_type === 'USB';
+                    const isWifi = p.connection_type === 'Wi-Fi / Network';
+                    const isVirtual = p.is_virtual || p.connection_type === 'Virtual / Software';
+
+                    return (
+                      <div
+                        key={p.name}
+                        className={`p-4 rounded-xl border transition-all ${
+                          p.is_already_added
+                            ? 'bg-slate-50/60 border-slate-200 opacity-80'
+                            : isVirtual
+                            ? 'bg-slate-50 border-dashed border-slate-200'
+                            : 'bg-white border-slate-200 shadow-sm hover:border-brand-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                                isWifi
+                                  ? 'bg-emerald-50 text-emerald-600'
+                                  : isUsb
+                                  ? 'bg-blue-50 text-blue-600'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {isWifi ? (
+                                <Wifi className="w-5 h-5" />
+                              ) : isUsb ? (
+                                <Usb className="w-5 h-5" />
+                              ) : (
+                                <Printer className="w-5 h-5" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-sm text-slate-900">{p.name}</h4>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                                    isWifi
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : isUsb
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {p.connection_type}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 font-mono mt-1">
+                                Driver: {p.driver_name} | Port: {p.port_name}
+                              </p>
+                              {isVirtual && (
+                                <p className="text-[11px] text-amber-600 mt-1 font-medium">
+                                  Virtual/Software device (Not recommended for physical kiosk kiosks)
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex-shrink-0">
+                            {p.is_already_added ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200">
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                Added
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleAddPrinter(p)}
+                                disabled={addingPrinterName === p.name}
+                                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-all ${
+                                  isVirtual
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                    : 'bg-brand-600 hover:bg-brand-700 text-white'
+                                } disabled:opacity-50`}
+                              >
+                                {addingPrinterName === p.name ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    Adding...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add to PrintX
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                Wi-Fi printers must be powered on and connected to the same LAN or configured via WSD / TCP-IP.
+              </span>
+              <button
+                onClick={() => setShowDiscoverModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

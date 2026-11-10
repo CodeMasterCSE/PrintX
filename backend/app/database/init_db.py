@@ -61,26 +61,7 @@ def init_db(db: Session) -> None:
         db.add(printer)
         db.flush()
 
-    # 4. Seed Fallback Virtual PDF Printer for testing
-    pdf_printer = db.query(Printer).filter(Printer.name == "Microsoft Print to PDF").first()
-    if not pdf_printer:
-        logger.info("Seeding virtual test printer: Microsoft Print to PDF")
-        pdf_printer = Printer(
-            name="Microsoft Print to PDF",
-            driver_name="Microsoft Print To PDF",
-            port_name="PORTPROMPT:",
-            location="Virtual Test Spooler",
-            is_online=True,
-            is_default=False,
-            supports_color=True,
-            supports_duplex=False,
-            status=PrinterStatus.ONLINE.value,
-            status_details="Virtual test printer",
-            queue_length=0
-        )
-        db.add(pdf_printer)
-
-    # 5. Seed Kiosk KIOSK-01
+    # 4. Seed Kiosk KIOSK-01
     kiosk = db.query(Kiosk).filter(Kiosk.code == "KIOSK-01").first()
     if not kiosk:
         logger.info("Seeding default kiosk: KIOSK-01")

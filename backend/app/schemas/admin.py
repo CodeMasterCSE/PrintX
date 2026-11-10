@@ -59,6 +59,29 @@ class AdminPrinterToggleRequest(BaseModel):
     is_online: bool
 
 
+class DiscoveredPrinterItem(BaseModel):
+    name: str
+    driver_name: str
+    port_name: str
+    connection_type: str  # "USB" | "Wi-Fi / Network" | "Virtual / Software"
+    is_virtual: bool
+    is_already_added: bool
+    existing_printer_id: Optional[str] = None
+    status: str = "online"
+    supports_color: bool = True
+    supports_duplex: bool = False
+
+
+class AdminPrinterCreateRequest(BaseModel):
+    name: str
+    driver_name: Optional[str] = None
+    port_name: Optional[str] = None
+    location: Optional[str] = "Campus Kiosk"
+    supports_color: bool = True
+    supports_duplex: bool = False
+    is_default: bool = False
+
+
 class DocumentPurgeRequest(BaseModel):
     retention_minutes: int = 15
     unprinted_expiry_hours: int = 24

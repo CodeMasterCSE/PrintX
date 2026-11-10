@@ -174,3 +174,55 @@ def test_admin_register_and_list_print_agents(client):
         assert "secret_hash" not in a
 
 
+def test_discover_system_printers(client):
+    """Verifies win32print hardware discovery endpoint categorizes USB and Wi-Fi printers."""
+    res = client.get("/api/v1/admin/printers/discover")
+    assert res.status_code == 200
+    items = res.json()
+    assert isinstance(items, list)
+    if items:
+        first = items[0]
+        assert "name" in first
+        assert "driver_name" in first
+        assert "port_name" in first
+        assert "connection_type" in first
+        assert "is_virtual" in first
+        assert "is_already_added" in first
+        assert first["connection_type"] in ["USB", "Wi-Fi / Network", "Local Port", "Virtual / Software"]
+
+
+def test_add_and_delete_printer(client, db_session):
+    """Verifies adding a discovered printer and deleting/decommissioning it."""
+    # 1. Add printer
+    new_printer_payload = {
+        "name": "HP Smart Tank 580 Wi-Fi (Engineering Lab)",
+        "driver_name": "HP Smart Tank 580-590 series",
+        "port_name": "WSD-ab12cd34-5678",
+        "location": "Engineering Lab 304",
+        "supports_color": True,
+        "supports_duplex": False
+    }
+    add_res = client.post("/api/v1/admin/printers/add", json=new_printer_payload)
+    assert add_res.status_code == 201
+    p_data = add_res.json()
+    assert p_data["name"] == "HP Smart Tank 580 Wi-Fi (Engineering Lab)"
+    assert p_data["supports_duplex"] is False
+    assert p_data["location"] == "Engineering Lab 304"
+    printer_id = p_data["id"]
+
+    # 2. Reject duplicate registration
+    dup_res = client.post("/api/v1/admin/printers/add", json=new_printer_payload)
+    assert dup_res.status_code == 400
+    assert "already registered" in dup_res.json()["detail"]
+
+    # 3. Delete printer
+    del_res = client.delete(f"/api/v1/admin/printers/{printer_id}")
+    assert del_res.status_code == 200
+    assert "successfully removed" in del_res.json()["message"]
+
+    # 4. Verify printer is gone from database
+    check_printer = db_session.query(Printer).filter(Printer.id == printer_id).first()
+    assert check_printer is None
+
+
+

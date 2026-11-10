@@ -8,10 +8,23 @@ at HP Smart Tank 585 self-service campus kiosks.
 import sys
 import io
 import argparse
+import socket
 from pathlib import Path
 import fitz  # PyMuPDF
 import qrcode
 from PIL import Image
+
+
+def get_local_lan_ip() -> str:
+    """Discovers the active local Wi-Fi or LAN IPv4 address for phone access."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 
 def generate_kiosk_poster(
@@ -20,6 +33,12 @@ def generate_kiosk_poster(
     base_url: str = "http://localhost:5173",
     output_path: str = "kiosk_poster_KIOSK-01.pdf"
 ) -> str:
+    # Auto-resolve local LAN IP so phones on the same Wi-Fi can scan and open
+    if "localhost" in base_url or "127.0.0.1" in base_url:
+        lan_ip = get_local_lan_ip()
+        if lan_ip != "127.0.0.1":
+            base_url = f"http://{lan_ip}:5173"
+
     portal_url = f"{base_url}/print?device={kiosk_code}"
     print(f"[*] Generating QR code for portal URL: {portal_url}")
 

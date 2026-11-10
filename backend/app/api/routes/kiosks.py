@@ -1,7 +1,7 @@
 import io
 import qrcode
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.models.kiosk import Kiosk
@@ -56,13 +56,21 @@ def get_kiosk_configuration(kiosk_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{kiosk_id}/qr.png")
-def get_kiosk_qr_png(kiosk_id: str, db: Session = Depends(get_db)):
+def get_kiosk_qr_png(
+    kiosk_id: str,
+    request: Request,
+    base_url: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """Streams a high-resolution PNG QR code for this kiosk."""
     kiosk = db.query(Kiosk).filter((Kiosk.id == kiosk_id) | (Kiosk.code == kiosk_id)).first()
     if not kiosk:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kiosk not found")
 
-    portal_url = f"{settings.SERVER_PUBLIC_URL}/print?device={kiosk.code}"
+    target_base = base_url or settings.SERVER_PUBLIC_URL
+    if not base_url and request.headers.get("host"):
+        target_base = f"http://{request.headers.get('host')}"
+    portal_url = f"{target_base}/print?device={kiosk.code}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,

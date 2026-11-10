@@ -116,7 +116,7 @@ export const KioskDisplay: React.FC = () => {
   const isPaperOut = activePrinter?.status === 'out_of_paper' || activePrinter?.status === 'PAPER_OUT';
   const isOffline = activePrinter?.is_online === false || activePrinter?.status === 'offline';
 
-  const qrUrl = `/api/v1/kiosks/${code}/qr.png`;
+  const qrUrl = `/api/v1/kiosks/${code}/qr.png?base_url=${encodeURIComponent(window.location.origin)}`;
   const mobilePortalUrl = `${window.location.origin}/print?device=${code}`;
 
   return (

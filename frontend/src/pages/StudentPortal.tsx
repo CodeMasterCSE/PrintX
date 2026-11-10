@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../api/client';
+import { api, API_BASE } from '../api/client';
 import { 
   DocumentInfo, 
   PrintConfig, 
@@ -147,7 +147,7 @@ export const StudentPortal: React.FC = () => {
     let eventSource: EventSource | null = null;
 
     try {
-      eventSource = new EventSource(`/api/v1/jobs/${job.id}/stream`);
+      eventSource = new EventSource(`${API_BASE}/jobs/${job.id}/stream`);
 
       eventSource.addEventListener('job_update', (e) => {
         try {
@@ -1097,7 +1097,7 @@ export const StudentPortal: React.FC = () => {
                   />
                 ) : (
                   <img
-                    src={`/api/v1/payments/${payment.id}/qr.png`}
+                    src={`${API_BASE}/payments/${payment.id}/qr.png`}
                     alt="UPI Payment QR Code"
                     className="w-full h-full object-contain rounded-lg"
                   />

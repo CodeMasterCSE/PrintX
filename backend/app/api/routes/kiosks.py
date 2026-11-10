@@ -108,7 +108,7 @@ def get_kiosk_qr_png(
     qr.make(fit=True)
     img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf)
     buf.seek(0)
     return Response(content=buf.getvalue(), media_type="image/png")
 

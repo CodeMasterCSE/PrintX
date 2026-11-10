@@ -17,7 +17,7 @@ import {
   Info,
   AlertCircle
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, API_BASE } from '../api/client';
 import { KioskConfig } from '../types';
 
 export const KioskDisplay: React.FC = () => {
@@ -68,7 +68,7 @@ export const KioskDisplay: React.FC = () => {
   useEffect(() => {
     let eventSource: EventSource | null = null;
     try {
-      eventSource = new EventSource('/api/v1/printers/stream');
+      eventSource = new EventSource(`${API_BASE}/printers/stream`);
 
       eventSource.addEventListener('printer_snapshot', (e) => {
         try {
@@ -125,7 +125,7 @@ export const KioskDisplay: React.FC = () => {
     ? `http://${(kiosk as any).lan_ip}:5173`
     : window.location.origin;
 
-  const qrUrl = `/api/v1/kiosks/${code}/qr.png?base_url=${encodeURIComponent(targetOrigin)}`;
+  const qrUrl = `${API_BASE}/kiosks/${code}/qr.png?base_url=${encodeURIComponent(targetOrigin)}`;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between selection:bg-indigo-500 selection:text-white font-sans">

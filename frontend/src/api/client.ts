@@ -7,7 +7,7 @@ import {
   DocumentInfo
 } from '../types';
 
-const API_BASE = '/api/v1';
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').replace(/\/+$/, '') + '/api/v1';
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('printx_token');

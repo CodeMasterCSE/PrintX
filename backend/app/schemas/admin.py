@@ -68,6 +68,8 @@ class DiscoveredPrinterItem(BaseModel):
     is_already_added: bool
     existing_printer_id: Optional[str] = None
     status: str = "online"
+    status_details: Optional[str] = None
+    is_online: bool = True
     supports_color: bool = True
     supports_duplex: bool = False
 

@@ -100,10 +100,20 @@ def get_analytics(db: Session = Depends(get_db)):
 
     total_pages = db.query(func.sum(PrintJob.sheets_used)).filter(PrintJob.status == JobStatus.COMPLETED).scalar() or 0
 
-    # Hardware Telemetry
-    total_printers = db.query(func.count(Printer.id)).scalar() or 0
-    active_printers = db.query(func.count(Printer.id)).filter(Printer.is_online == True).scalar() or 0
-    offline_printers = db.query(func.count(Printer.id)).filter(Printer.is_online == False).scalar() or 0
+    # Hardware Telemetry - dynamically check live physical status of registered printers
+    from app.core.printer_utils import get_live_printer_status
+    all_registered = db.query(Printer).all()
+    for rp in all_registered:
+        is_live, stat_str, details = get_live_printer_status(rp.name, rp.port_name or "")
+        if rp.is_online != is_live or rp.status != stat_str:
+            rp.is_online = is_live
+            rp.status = stat_str
+            rp.status_details = details
+    db.commit()
+
+    total_printers = len(all_registered)
+    active_printers = sum(1 for rp in all_registered if rp.is_online)
+    offline_printers = total_printers - active_printers
     active_agents = db.query(func.count(PrintAgent.id)).filter(PrintAgent.is_active == True).scalar() or 0
     total_spooler_depth = db.query(func.sum(Printer.queue_length)).scalar() or 0
 
@@ -350,13 +360,8 @@ def discover_system_printers(db: Session = Depends(get_db)):
 
         existing = registered_printers.get(p_name)
 
-        status_str = "online"
-        if raw_status & 0x00000080:  # Spooler reported OFFLINE
-            from app.core.printer_utils import is_network_printer_reachable
-            if is_network_printer_reachable(port_name):
-                status_str = "online"
-            else:
-                status_str = "offline"
+        from app.core.printer_utils import get_live_printer_status
+        is_live_online, status_str, status_details = get_live_printer_status(p_name, port_name, raw_status)
 
         discovered.append(DiscoveredPrinterItem(
             name=p_name,
@@ -367,6 +372,8 @@ def discover_system_printers(db: Session = Depends(get_db)):
             is_already_added=existing is not None,
             existing_printer_id=existing.id if existing else None,
             status=status_str,
+            status_details=status_details,
+            is_online=is_live_online,
             supports_color=supports_col,
             supports_duplex=supports_dup
         ))

@@ -1042,10 +1042,26 @@ export const AdminDashboard: React.FC = () => {
                                 >
                                   {p.connection_type}
                                 </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border inline-flex items-center gap-1 ${
+                                    p.status === 'online'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-red-50 text-red-700 border-red-200'
+                                  }`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${p.status === 'online' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                                  {p.status === 'online' ? 'Online' : 'OFFLINE'}
+                                </span>
                               </div>
                               <p className="text-xs text-slate-500 font-mono mt-1">
                                 Driver: {p.driver_name} | Port: {p.port_name}
                               </p>
+                              {p.status_details && p.status === 'offline' && (
+                                <p className="text-[11px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  {p.status_details}
+                                </p>
+                              )}
                               <div className="flex items-center gap-2 mt-1.5">
                                 <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                   {p.supports_color ? 'Color & B&W' : 'B&W Only'}

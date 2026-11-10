@@ -85,17 +85,35 @@ async def stream_printer_status(
 
 @router.get("", response_model=List[PrinterResponse])
 def list_printers(db: Session = Depends(get_db)):
-    """List all registered printers and their live status."""
+    """List all registered printers and dynamically verify live physical connectivity."""
+    from app.core.printer_utils import get_live_printer_status
     printers = db.query(Printer).all()
+    changed = False
+    for p in printers:
+        is_live, stat_str, details = get_live_printer_status(p.name, p.port_name or "")
+        if p.is_online != is_live or p.status != stat_str:
+            p.is_online = is_live
+            p.status = stat_str
+            p.status_details = details
+            changed = True
+    if changed:
+        db.commit()
     return [PrinterResponse.model_validate(p) for p in printers]
 
 
 @router.get("/{printer_id}", response_model=PrinterResponse)
 def get_printer(printer_id: str, db: Session = Depends(get_db)):
-    """Get detailed printer telemetry."""
+    """Get detailed printer telemetry with live hardware health verification."""
+    from app.core.printer_utils import get_live_printer_status
     printer = db.query(Printer).filter(Printer.id == printer_id).first()
     if not printer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Printer not found")
+    is_live, stat_str, details = get_live_printer_status(printer.name, printer.port_name or "")
+    if printer.is_online != is_live or printer.status != stat_str:
+        printer.is_online = is_live
+        printer.status = stat_str
+        printer.status_details = details
+        db.commit()
     return PrinterResponse.model_validate(printer)
 
 

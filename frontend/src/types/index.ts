@@ -134,5 +134,7 @@ export interface KioskConfig {
   supports_duplex: boolean;
   per_page_bw: number;
   per_page_color: number;
+  lan_ip?: string;
+  mobile_portal_url?: string;
 }
 

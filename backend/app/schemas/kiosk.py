@@ -31,4 +31,7 @@ class KioskConfigResponse(BaseModel):
     supports_duplex: bool = False
     per_page_bw: float
     per_page_color: float
+    lan_ip: Optional[str] = None
+    mobile_portal_url: Optional[str] = None
+
 

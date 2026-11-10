@@ -116,8 +116,16 @@ export const KioskDisplay: React.FC = () => {
   const isPaperOut = activePrinter?.status === 'out_of_paper' || activePrinter?.status === 'PAPER_OUT';
   const isOffline = activePrinter?.is_online === false || activePrinter?.status === 'offline';
 
-  const qrUrl = `/api/v1/kiosks/${code}/qr.png?base_url=${encodeURIComponent(window.location.origin)}`;
-  const mobilePortalUrl = `${window.location.origin}/print?device=${code}`;
+  // Dynamic LAN URL resolution: If viewing kiosk on localhost, display the real LAN IP for mobile scan
+  const mobilePortalUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (kiosk as any)?.mobile_portal_url
+    ? (kiosk as any).mobile_portal_url
+    : `${window.location.origin}/print?device=${code}`;
+
+  const targetOrigin = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (kiosk as any)?.lan_ip
+    ? `http://${(kiosk as any).lan_ip}:5173`
+    : window.location.origin;
+
+  const qrUrl = `/api/v1/kiosks/${code}/qr.png?base_url=${encodeURIComponent(targetOrigin)}`;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between selection:bg-indigo-500 selection:text-white font-sans">
